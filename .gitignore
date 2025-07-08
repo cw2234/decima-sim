@@ -2,4 +2,5 @@
 models
 results
 __pycache__
-
+dag_visualization
+task_durations
