@@ -166,8 +166,7 @@ def main():
                'running_dag_mat': [], 'dag_summ_back_mat': [], 'node_act_vec': [], 'job_act_vec': [],
                'node_valid_mask': [], 'job_valid_mask': [], 'reward': [], 'wall_time': [], 'job_state_change': []}
 
-        # storage for advantage computation
-        all_rewards, all_diff_times, all_times, all_num_finished_jobs, all_avg_job_duration, all_reset_hit, = [], [], [], [], [], []
+
 
         t1 = time.time()
         try:
@@ -212,38 +211,31 @@ def main():
 
             diff_time = np.array(batch_time[1:]) - np.array(batch_time[:-1])
 
-            all_rewards.append(batch_reward)
-            all_diff_times.append(diff_time)
-            all_times.append(batch_time[1:])
-            # all_num_finished_jobs = num_finished_jobs
-            # all_avg_job_duration.append(avg_job_duration)
-            # all_reset_hit.append(reset_hit)
-
             avg_reward_calculator.add_list_filter_zero(batch_reward, diff_time)
 
         t2 = time.time()
         print('got reward from workers', t2 - t1, 'seconds')
 
         # compute differential reward
-        all_cum_reward = []
         avg_per_step_reward = avg_reward_calculator.get_avg_per_step_reward()
 
         if args.diff_reward_enabled:
             # differential reward mode on
-            rewards = np.array([r - avg_per_step_reward * t for (r, t) in zip(all_rewards[0], all_diff_times[0])])
+            rewards = np.array([r - avg_per_step_reward * t for (r, t) in zip(batch_reward, diff_time)])
         else:
             # regular reward
-            rewards = np.array([r for (r, t) in zip(all_rewards[0], all_diff_times[0])])
+            rewards = np.array([r for (r, t) in zip(batch_reward, diff_time)])
 
         cum_reward = utils.discount(rewards, args.gamma)
 
-        all_cum_reward.append(cum_reward)
 
-        # compute baseline
-        baselines = compute_baselines.get_piecewise_linear_fit_baseline(all_cum_reward, all_times)
+        # compute baseline，返回的是list，但现在只有一个agent
+        baselines = compute_baselines.get_piecewise_linear_fit_baseline([cum_reward], [batch_time[1:]])
 
+        # 变成一项
+        baselines = baselines[0] # 一个agent的
         # give worker back the advantage
-        batch_adv = all_cum_reward[0] - baselines[0]
+        batch_adv = cum_reward - baselines
         batch_adv = np.reshape(batch_adv, [len(batch_adv), 1])
 
         # compute gradients
@@ -253,11 +245,11 @@ def main():
         t3 = time.time()
         print('advantage ready', t3 - t2, 'seconds')
 
-        actor_gradients = [actor_gradient]
+        actor_gradients = [actor_gradient]  # 本来是多个agent
 
         # 用于tensorboard日志
         action_loss = loss[0]
-        entropy = -loss[1] / float(all_cum_reward[0].shape[0])
+        entropy = -loss[1] / float(cum_reward.shape[0])
         value_loss = loss[2]
 
         t4 = time.time()
@@ -270,8 +262,8 @@ def main():
 
         # 打印到tensorboard
         tf_logger.log(ep, [action_loss, entropy, value_loss,
-                           np.mean([len(b) for b in baselines]), avg_per_step_reward * args.reward_scale,
-                           np.mean([cr[0] for cr in all_cum_reward]), reset_prob, num_finished_jobs,
+                           len(baselines), avg_per_step_reward * args.reward_scale,
+                           cum_reward[0], reset_prob, num_finished_jobs,
                            reset_hit, avg_job_duration, entropy_weight])
 
         # decrease entropy weight
