@@ -8,6 +8,7 @@ node points at each iteration)
 import numpy as np
 import torch
 from utils import OrderedSet
+import pytorch_sparse_op
 from param import args
 
 
@@ -57,8 +58,7 @@ def get_msg_path(job_dags):
         msg_masks.append(msg_mask)
 
     if len(job_dags) > 0:
-        msg_mats = sparse_op.absorb_sp_mats(
-            msg_mats, args.max_depth)
+        msg_mats = pytorch_sparse_op.absorb_sp_mats(msg_mats, args.max_depth)
         msg_masks = merge_masks(msg_masks)
 
     return msg_mats, msg_masks
@@ -119,8 +119,7 @@ def get_bottom_up_paths(job_dag):
                             curr_level = msg_level[child]
                     # children all ready
                     if children_all_in_frontier:
-                        if parent not in msg_level or \
-                                curr_level + 1 > msg_level[parent]:
+                        if parent not in msg_level or curr_level + 1 > msg_level[parent]:
                             # parent node has deeper message passed
                             new_frontier.add(parent)
                             msg_level[parent] = curr_level + 1
@@ -131,7 +130,7 @@ def get_bottom_up_paths(job_dag):
             break  # some graph is shallow
 
         # assign parent-child path in current iteration
-        sp_mat = sparse_op.SparseMat(dtype=np.float32, shape=(num_nodes, num_nodes))
+        sp_mat = pytorch_sparse_op.SparseMat(dtype=torch.float32, shape=(num_nodes, num_nodes))
         for n in new_frontier:
             for child in n.child_nodes:
                 sp_mat.add(row=n.idx, col=child.idx, data=1)
@@ -156,19 +155,18 @@ def get_bottom_up_paths(job_dag):
 
     # deliberately make dimension the same, for batch processing
     for _ in range(depth, args.max_depth):
-        msg_mats.append(sparse_op.SparseMat(dtype=np.float32,
+        msg_mats.append(pytorch_sparse_op.SparseMat(dtype=torch.float32,
                                             shape=(num_nodes, num_nodes)))
 
+    # TODO: 不确定 msg_mats = [mat.to_torchsp_matrix() for mat in msg_mats]
     return msg_mats, msg_masks
 
 
 def get_dag_summ_backward_map(job_dags):
     # compute backward mapping from node idx to dag idx
-    total_num_nodes = \
-        int(np.sum([job_dag.num_nodes for job_dag in job_dags]))
+    total_num_nodes = int(np.sum([job_dag.num_nodes for job_dag in job_dags]))
 
-    dag_summ_backward_map = \
-        np.zeros([total_num_nodes, len(job_dags)])
+    dag_summ_backward_map = np.zeros([total_num_nodes, len(job_dags)])
 
     base = 0
     j_idx = 0
@@ -198,10 +196,10 @@ def get_running_dag_mat(job_dags):
 
         j_idx += 1
 
-    running_dag_indices = np.mat(
-        [running_dag_row_idx, running_dag_col_idx]).transpose()
-    running_dag_mat = tf.SparseTensorValue(
-        running_dag_indices, running_dag_data, running_dag_shape)
+    running_dag_indices = torch.tensor([running_dag_row_idx, running_dag_col_idx], dtype=torch.long)
+    running_dag_data = torch.tensor(running_dag_data, dtype=torch.float32)
+    running_dag_mat = torch.sparse_coo_tensor(running_dag_indices, running_dag_data, running_dag_shape)
+
 
     return running_dag_mat
 
@@ -229,10 +227,10 @@ def merge_masks(masks):
 
         merged_mask = []
         for mask in masks:
-            merged_mask.append(mask[d:d + 1, :].transpose())
+            merged_mask.append(torch.tensor(mask[d:d + 1, :].transpose()))
 
         if len(merged_mask) > 0:
-            merged_mask = np.vstack(merged_mask)
+            merged_mask = torch.vstack(merged_mask)
 
         merged_masks.append(merged_mask)
 
@@ -244,8 +242,7 @@ def get_unfinished_nodes_summ_mat(job_dags):
     # 2. silent out all the nodes that's already done
     # O(num_total_nodes)
 
-    total_num_nodes = \
-        np.sum([job_dag.num_nodes for job_dag in job_dags])
+    total_num_nodes = np.sum([job_dag.num_nodes for job_dag in job_dags])
 
     summ_row_idx = []
     summ_col_idx = []
@@ -265,8 +262,8 @@ def get_unfinished_nodes_summ_mat(job_dags):
         base += job_dag.num_nodes
         j_idx += 1
 
-    summ_indices = np.mat([summ_row_idx, summ_col_idx]).transpose()
-    summerize_mat = tf.SparseTensorValue(
-        summ_indices, summ_data, summ_shape)
+    summ_indices = torch.tensor([summ_row_idx, summ_col_idx], dtype=torch.long)
+    summ_data = torch.tensor(summ_data, dtype=torch.float32)
+    summerize_mat = torch.sparse_coo_tensor(summ_indices, summ_data, summ_shape)
 
     return summerize_mat
