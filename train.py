@@ -267,10 +267,8 @@ def main():
 
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')
-        # tf_logger = TFLogger(main_sess,
-        #                      ['actor_loss', 'entropy', 'value_loss', 'episode_length', 'average_reward_per_second',
-        #                       'sum_reward', 'reset_probability', 'num_jobs', 'reset_hit', 'average_job_duration',
-        #                       'entropy_weight'])
+
+        # 打印到tensorboard
         tf_logger.log(ep, [action_loss, entropy, value_loss,
                            np.mean([len(b) for b in baselines]), avg_per_step_reward * args.reward_scale,
                            np.mean([cr[0] for cr in all_cum_reward]), reset_prob, num_finished_jobs,

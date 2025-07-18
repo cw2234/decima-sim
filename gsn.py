@@ -5,10 +5,9 @@ Summarize node features globally
 via parameterized aggregation scheme
 """
 
-import copy
-import numpy as np
 import tensorflow as tf
-from tf_op import glorot, ones, zeros
+
+from tf_op import glorot, zeros
 
 
 class GraphSNN(object):
