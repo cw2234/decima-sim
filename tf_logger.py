@@ -1,5 +1,5 @@
 import tensorflow as tf
-from time import gmtime, strftime
+from time import localtime, strftime
 from param import *
 
 
@@ -18,7 +18,7 @@ class TFLogger(object):
 
         self.writer = tf.summary.FileWriter(
             args.result_folder + args.model_folder + \
-            strftime("%Y-%m-%d-%H-%M-%S", gmtime()))
+            strftime("%Y-%m-%d-%H-%M-%S", localtime()))
 
     def log(self, ep, values):
         assert len(self.summary_vars) == len(values)

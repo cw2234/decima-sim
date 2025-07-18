@@ -164,7 +164,7 @@ def main():
 
         # set up storage for experience
         exp = {'node_inputs': [], 'job_inputs': [], 'gcn_mats': [], 'gcn_masks': [], 'summ_mats': [],
-               'running_dag_mat': [], 'dag_summ_back_mat': [], 'node_act_vec': [], 'job_act_vec': [], \
+               'running_dag_mat': [], 'dag_summ_back_mat': [], 'node_act_vec': [], 'job_act_vec': [],
                'node_valid_mask': [], 'job_valid_mask': [], 'reward': [], 'wall_time': [], 'job_state_change': []}
 
         # storage for advantage computation
@@ -199,16 +199,13 @@ def main():
 
             # report reward signals to master
             assert len(exp['node_inputs']) == len(exp['reward'])
-            reward_queues = [exp['reward'], exp['wall_time'], len(env.finished_job_dags),
+            result = [exp['reward'], exp['wall_time'], len(env.finished_job_dags),
                               np.mean([j.completion_time - j.start_time for j in env.finished_job_dags]),
                               env.wall_time.curr_time >= env.max_time]
 
         except AssertionError:
-            reward_queues = None
+            result = None
 
-
-        # get reward from agents
-        result = reward_queues
 
         if result is None:
             continue
@@ -220,9 +217,9 @@ def main():
             all_rewards.append(batch_reward)
             all_diff_times.append(diff_time)
             all_times.append(batch_time[1:])
-            all_num_finished_jobs.append(num_finished_jobs)
-            all_avg_job_duration.append(avg_job_duration)
-            all_reset_hit.append(reset_hit)
+            # all_num_finished_jobs = num_finished_jobs
+            # all_avg_job_duration.append(avg_job_duration)
+            # all_reset_hit.append(reset_hit)
 
             avg_reward_calculator.add_list_filter_zero(batch_reward, diff_time)
 
@@ -260,15 +257,13 @@ def main():
         print('advantage ready', t3 - t2, 'seconds')
 
         actor_gradients = []
-        all_action_loss = []  # for tensorboard
-        all_entropy = []  # for tensorboard
-        all_value_loss = []  # for tensorboard
 
 
         actor_gradients.append(actor_gradient)
-        all_action_loss.append(loss[0])
-        all_entropy.append(-loss[1] / float(all_cum_reward[0].shape[0]))
-        all_value_loss.append(loss[2])
+        # 用于tensorboard日志
+        action_loss = loss[0]
+        entropy = -loss[1] / float(all_cum_reward[0].shape[0])
+        value_loss = loss[2]
 
         t4 = time.time()
         print('worker send back gradients', t4 - t3, 'seconds')
@@ -277,11 +272,14 @@ def main():
 
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')
-
-        tf_logger.log(ep, [np.mean(all_action_loss), np.mean(all_entropy), np.mean(all_value_loss),
+        # tf_logger = TFLogger(main_sess,
+        #                      ['actor_loss', 'entropy', 'value_loss', 'episode_length', 'average_reward_per_second',
+        #                       'sum_reward', 'reset_probability', 'num_jobs', 'reset_hit', 'average_job_duration',
+        #                       'entropy_weight'])
+        tf_logger.log(ep, [action_loss, entropy, value_loss,
                            np.mean([len(b) for b in baselines]), avg_per_step_reward * args.reward_scale,
-                           np.mean([cr[0] for cr in all_cum_reward]), reset_prob, np.mean(all_num_finished_jobs),
-                           np.mean(all_reset_hit), np.mean(all_avg_job_duration), entropy_weight])
+                           np.mean([cr[0] for cr in all_cum_reward]), reset_prob, num_finished_jobs,
+                           reset_hit, avg_job_duration, entropy_weight])
 
         # decrease entropy weight
         entropy_weight = decrease_var(entropy_weight, args.entropy_weight_min, args.entropy_weight_decay)
