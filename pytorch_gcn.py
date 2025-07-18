@@ -11,7 +11,7 @@ import numpy as np
 
 
 class GraphCNN(nn.Module):
-    def __init__(self, inputs, input_dim, hid_dims, output_dim, max_depth, act_fn):
+    def __init__(self, input_dim, hid_dims, output_dim, max_depth, act_fn):
         super(GraphCNN, self).__init__()
 
         # self.inputs = inputs

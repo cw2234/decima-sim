@@ -13,7 +13,7 @@ class SparseMat(object):
     def add(self, row, col, data):
         self.row.append(row)
         self.col.append(col)
-        self.data.append(data
+        self.data.append(data)
 
     def get_col(self):
         return np.array(self.col)
@@ -25,8 +25,8 @@ class SparseMat(object):
         return np.array(self.data)
 
     def to_tfsp_matrix(self):
-        indices = np.mat([row, col]).transpose()
-        return tf.SparseTensorValue(indices, data, self.shape)
+        indices = np.mat([self.row, self.col]).transpose()
+        return tf.SparseTensorValue(indices, self.data, self.shape)
 
 
 def absorb_sp_mats(in_mats, depth):
@@ -35,13 +35,13 @@ def absorb_sp_mats(in_mats, depth):
     a giant one on its diagonal
 
     e.g., 
-    
+
     [0, 1, 0]    [0, 1, 0]    [0, 0, 1]
     [1, 0, 0]    [0, 0, 1]    [0, 1, 0]
     [0, 0, 1]    [1, 0, 0]    [0, 1, 0]
-    
-    to 
-    
+
+    to
+
     [0, 1, 0]
     [1, 0, 0]   ..  ..    ..  ..
     [0, 0, 1]
@@ -55,7 +55,7 @@ def absorb_sp_mats(in_mats, depth):
     where ".." are all zeros
 
     depth is on the 3rd dimension,
-    which is orthogonal to the planar 
+    which is orthogonal to the planar
     operations above
 
     output SparseTensorValue from tensorflow
@@ -88,7 +88,7 @@ def absorb_sp_mats(in_mats, depth):
 
 def expand_sp_mat(sp, exp_step):
     """
-    Make a stack of same sparse matrix to 
+    Make a stack of same sparse matrix to
     a giant one on its diagonal
 
     The input is tf.SparseTensorValue
@@ -104,11 +104,11 @@ def expand_sp_mat(sp, exp_step):
                                    [0, 1, 0]
                   ..  ..   ..  ..  [1, 0, 0]
                                    [0, 0, 1]
-    
+
     where ".." are all zeros
 
     depth is on the 3rd dimension,
-    which is orthogonal to the planar 
+    which is orthogonal to the planar
     operations above
 
     output SparseTensorValue from tensorflow
@@ -139,7 +139,7 @@ def expand_sp_mat(sp, exp_step):
         indices = np.mat([row_idx, col_idx]).transpose()
         extended_mat.append(tf.SparseTensorValue(
             indices, data, (shape, shape)))
-    
+
     return extended_mat
 
 
