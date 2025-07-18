@@ -6,8 +6,7 @@ from agent_for_test.spark_agent import SparkAgent
 from agent_for_test.heuristic_agent import DynamicPartitionAgent
 from actor_agent import ActorAgent
 from spark_env.canvas import *
-from param import *
-from utils import *
+from param import args
 
 
 # create result folder

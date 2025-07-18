@@ -1,6 +1,6 @@
 import tensorflow as tf
 from time import localtime, strftime
-from param import *
+from param import args
 
 
 class TFLogger(object):

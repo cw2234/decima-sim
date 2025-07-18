@@ -1,19 +1,23 @@
 import os
-from param import *
-from utils import *
-from spark_env.task import *
-from spark_env.node import *
-from spark_env.job_dag import *
+
+
+import numpy as np
+import utils
+from param import args
+from spark_env.task import Task
+from spark_env.node import Node
+from spark_env.job_dag import JobDAG
+
 
 
 def load_job(file_path, query_size, query_idx, wall_time, np_random):
     query_path = file_path + query_size + '/'
-    
+
     adj_mat = np.load(
         query_path + 'adj_mat_' + str(query_idx) + '.npy', allow_pickle=True)
     task_durations = np.load(
         query_path + 'task_duration_' + str(query_idx) + '.npy', allow_pickle=True).item()
-    
+
     assert adj_mat.shape[0] == adj_mat.shape[1]
     assert adj_mat.shape[0] == len(task_durations)
 
@@ -68,7 +72,7 @@ def pre_process_task_duration(task_duration):
     clean_first_wave = {}
     for e in task_duration['first_wave']:
         clean_first_wave[e] = []
-        fresh_durations = SetWithCount()
+        fresh_durations = utils.SetWithCount()
         # O(1) access
         for d in task_duration['fresh_durations'][e]:
             fresh_durations.add(d)
@@ -109,7 +113,7 @@ def generate_alibaba_jobs(np_random, timeline, wall_time):
 
 def generate_tpch_jobs(np_random, timeline, wall_time):
 
-    job_dags = OrderedSet()
+    job_dags = utils.OrderedSet()
     t = 0
 
     for _ in range(args.num_init_dags):

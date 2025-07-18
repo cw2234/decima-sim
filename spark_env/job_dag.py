@@ -1,8 +1,7 @@
 import networkx as nx
 import numpy as np
-from collections import OrderedDict
 from utils import OrderedSet
-from param import *
+from param import args
 from spark_env.node import NodeDuration
 
 class JobDAG(object):

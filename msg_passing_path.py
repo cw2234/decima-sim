@@ -8,8 +8,8 @@ node points at each iteration)
 import numpy as np
 import tensorflow as tf
 from utils import OrderedSet
-from sparse_op import *
-from param import *
+import sparse_op
+from param import args
 
 
 class Postman(object):
@@ -58,7 +58,7 @@ def get_msg_path(job_dags):
         msg_masks.append(msg_mask)
 
     if len(job_dags) > 0:
-        msg_mats = absorb_sp_mats(
+        msg_mats = sparse_op.absorb_sp_mats(
             msg_mats, args.max_depth)
         msg_masks = merge_masks(msg_masks)
 
@@ -132,7 +132,7 @@ def get_bottom_up_paths(job_dag):
             break  # some graph is shallow
 
         # assign parent-child path in current iteration
-        sp_mat = SparseMat(dtype=np.float32, shape=(num_nodes, num_nodes))
+        sp_mat = sparse_op.SparseMat(dtype=np.float32, shape=(num_nodes, num_nodes))
         for n in new_frontier:
             for child in n.child_nodes:
                 sp_mat.add(row=n.idx, col=child.idx, data=1)
@@ -157,7 +157,7 @@ def get_bottom_up_paths(job_dag):
 
     # deliberately make dimension the same, for batch processing
     for _ in range(depth, args.max_depth):
-        msg_mats.append(SparseMat(dtype=np.float32,
+        msg_mats.append(sparse_op.SparseMat(dtype=np.float32,
             shape=(num_nodes, num_nodes)))
 
     return msg_mats, msg_masks

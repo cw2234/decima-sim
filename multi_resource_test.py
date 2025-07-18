@@ -7,8 +7,8 @@ from multi_resource_env.env import MultiResEnvironment as Env
 from multi_resource_agents.multi_resource_heuristic_agent import *
 from multi_resource_agents.actor_agent import MultiResActorAgent
 from spark_env.canvas import *
-from param import *
-from utils import *
+from param import args
+
 
 
 # create result folder

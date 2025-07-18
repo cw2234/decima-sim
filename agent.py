@@ -1,5 +1,3 @@
-from utils import *
-
 # super class of scheduling agnet
 class Agent(object):
     def __init__(self):

@@ -1,5 +1,5 @@
 import numpy as np
-from param import *
+from param import args
 from utils import OrderedSet
 
 

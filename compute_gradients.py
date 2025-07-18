@@ -1,10 +1,11 @@
-from param import *
-from utils import *
+import numpy as np
+import utils
+
 from sparse_op import expand_sp_mat, merge_and_extend_sp_mat
 
 
 def compute_actor_gradients(actor_agent, exp, batch_adv, entropy_weight):
-    batch_points = truncate_experiences(exp['job_state_change'])
+    batch_points = utils.truncate_experiences(exp['job_state_change'])
 
     all_gradients = []
     all_loss = [[], [], 0]
@@ -63,6 +64,6 @@ def compute_actor_gradients(actor_agent, exp, batch_adv, entropy_weight):
     all_loss[2] = np.sum(batch_adv ** 2) # time based baseline loss
 
     # aggregate all gradients from the batches
-    gradients = aggregate_gradients(all_gradients)
+    gradients = utils.aggregate_gradients(all_gradients)
 
     return gradients, all_loss

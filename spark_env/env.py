@@ -1,8 +1,8 @@
 import numpy as np
 import copy
 from collections import OrderedDict
-from param import *
-from utils import *
+from param import args
+import utils
 from spark_env.action_map import compute_act_map, get_frontier_acts
 from spark_env.reward_calculator import RewardCalculator
 from spark_env.moving_executors import MovingExecutors
@@ -29,7 +29,7 @@ class Environment(object):
         self.timeline = Timeline()
 
         # executors
-        self.executors = OrderedSet()
+        self.executors = utils.OrderedSet()
         for exec_id in range(args.exec_cap):
             self.executors.add(Executor(exec_id))
 
@@ -72,7 +72,7 @@ class Environment(object):
                     # free up the executor
                     self.free_executors.add(source_job, executor)
                 # then consult all free executors
-                self.exec_to_schedule = OrderedSet(self.free_executors[source_job])
+                self.exec_to_schedule = utils.OrderedSet(self.free_executors[source_job])
                 self.source_job = source_job
                 self.num_source_exec = len(self.free_executors[source_job])
             else:
@@ -124,7 +124,7 @@ class Environment(object):
 
     def get_frontier_nodes(self):
         # frontier nodes := unsaturated nodes with all parent nodes saturated
-        frontier_nodes = OrderedSet()
+        frontier_nodes = utils.OrderedSet()
         for job_dag in self.job_dags:
             for node in job_dag.nodes:
                 if not node in self.node_selected and not self.saturated(node):
@@ -297,7 +297,7 @@ class Environment(object):
                 # assign free executors (if any) to the new job
                 if len(self.free_executors[None]) > 0:
                     self.exec_to_schedule = \
-                        OrderedSet(self.free_executors[None])
+                        utils.OrderedSet(self.free_executors[None])
                     self.source_job = None
                     self.num_source_exec = \
                         len(self.free_executors[None])
@@ -363,7 +363,7 @@ class Environment(object):
         self.exec_commit.reset()
         self.moving_executors.reset()
         self.reward_calculator.reset()
-        self.finished_job_dags = OrderedSet()
+        self.finished_job_dags = utils.OrderedSet()
         self.node_selected.clear()
         for executor in self.executors:
             executor.reset()
@@ -379,7 +379,7 @@ class Environment(object):
         # put all executors as source executors initially
         self.source_job = None
         self.num_source_exec = len(self.executors)
-        self.exec_to_schedule = OrderedSet(self.executors)
+        self.exec_to_schedule = utils.OrderedSet(self.executors)
 
     def seed(self, seed):
         self.np_random.seed(seed)
