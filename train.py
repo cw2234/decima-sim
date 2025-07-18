@@ -3,15 +3,15 @@ import os
 # os.environ['CUDA_VISIBLE_DEVICES']=''
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import time
-import numpy as np
 import tensorflow as tf
-import multiprocessing as mp
-from param import *
-from utils import *
+import numpy as np
+
+from param import args
+import utils
 from spark_env.env import Environment
-from average_reward import *
-from compute_baselines import *
-from compute_gradients import *
+from average_reward import AveragePerStepReward
+import compute_baselines
+import compute_gradients
 from actor_agent import ActorAgent
 from tf_logger import TFLogger
 
@@ -106,12 +106,11 @@ def main():
     tf.set_random_seed(args.seed)
 
     # create result and model folder
-    create_folder_if_not_exists(args.result_folder)
-    create_folder_if_not_exists(args.model_folder)
+    utils.create_folder_if_not_exists(args.result_folder)
+    utils.create_folder_if_not_exists(args.model_folder)
 
     # model evaluation seed
     tf.set_random_seed(0)
-
 
     env = Environment()
     worker_config = tf.ConfigProto(device_count={'GPU': args.worker_num_gpu},
@@ -121,19 +120,19 @@ def main():
                                     args.output_dim,
                                     args.max_depth, range(1, args.exec_cap + 1))
 
-
     # gpu configuration
     main_config = tf.ConfigProto(device_count={'GPU': args.master_num_gpu},
-                            gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=args.master_gpu_fraction))
+                                 gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=args.master_gpu_fraction))
     main_sess = tf.Session(config=main_config)
     # set up actor agent
     main_actor_agent = ActorAgent(main_sess, args.node_input_dim, args.job_input_dim, args.hid_dims, args.output_dim,
-                             args.max_depth, range(1, args.exec_cap + 1), scope='main_actor')
+                                  args.max_depth, range(1, args.exec_cap + 1), scope='main_actor')
 
     # tensorboard logging
-    tf_logger = TFLogger(main_sess, ['actor_loss', 'entropy', 'value_loss', 'episode_length', 'average_reward_per_second',
-                                'sum_reward', 'reset_probability', 'num_jobs', 'reset_hit', 'average_job_duration',
-                                'entropy_weight'])
+    tf_logger = TFLogger(main_sess,
+                         ['actor_loss', 'entropy', 'value_loss', 'episode_length', 'average_reward_per_second',
+                          'sum_reward', 'reset_probability', 'num_jobs', 'reset_hit', 'average_job_duration',
+                          'entropy_weight'])
 
     # store average reward for computing differential rewards
     avg_reward_calculator = AveragePerStepReward(args.average_reward_storage_size)
@@ -152,7 +151,7 @@ def main():
         actor_params = main_actor_agent.get_params()
 
         # generate max time stochastically based on reset prob
-        max_time = generate_coin_flips(reset_prob)
+        max_time = utils.generate_coin_flips(reset_prob)
 
         seed = args.seed + ep
         # synchronize model
@@ -200,12 +199,11 @@ def main():
             # report reward signals to master
             assert len(exp['node_inputs']) == len(exp['reward'])
             result = [exp['reward'], exp['wall_time'], len(env.finished_job_dags),
-                              np.mean([j.completion_time - j.start_time for j in env.finished_job_dags]),
-                              env.wall_time.curr_time >= env.max_time]
+                      np.mean([j.completion_time - j.start_time for j in env.finished_job_dags]),
+                      env.wall_time.curr_time >= env.max_time]
 
         except AssertionError:
             result = None
-
 
         if result is None:
             continue
@@ -226,7 +224,6 @@ def main():
         t2 = time.time()
         print('got reward from workers', t2 - t1, 'seconds')
 
-
         # compute differential reward
         all_cum_reward = []
         avg_per_step_reward = avg_reward_calculator.get_avg_per_step_reward()
@@ -238,28 +235,26 @@ def main():
             # regular reward
             rewards = np.array([r for (r, t) in zip(all_rewards[0], all_diff_times[0])])
 
-        cum_reward = discount(rewards, args.gamma)
+        cum_reward = utils.discount(rewards, args.gamma)
 
         all_cum_reward.append(cum_reward)
 
         # compute baseline
-        baselines = get_piecewise_linear_fit_baseline(all_cum_reward, all_times)
+        baselines = compute_baselines.get_piecewise_linear_fit_baseline(all_cum_reward, all_times)
 
         # give worker back the advantage
         batch_adv = all_cum_reward[0] - baselines[0]
         batch_adv = np.reshape(batch_adv, [len(batch_adv), 1])
 
         # compute gradients
-        actor_gradient, loss = compute_actor_gradients(worker_actor_agent, exp, batch_adv, entropy_weight)
-
+        actor_gradient, loss = compute_gradients.compute_actor_gradients(worker_actor_agent, exp, batch_adv,
+                                                                         entropy_weight)
 
         t3 = time.time()
         print('advantage ready', t3 - t2, 'seconds')
 
-        actor_gradients = []
+        actor_gradients = [actor_gradient]
 
-
-        actor_gradients.append(actor_gradient)
         # 用于tensorboard日志
         action_loss = loss[0]
         entropy = -loss[1] / float(all_cum_reward[0].shape[0])
@@ -268,7 +263,7 @@ def main():
         t4 = time.time()
         print('worker send back gradients', t4 - t3, 'seconds')
 
-        main_actor_agent.apply_gradients(aggregate_gradients(actor_gradients), args.lr)
+        main_actor_agent.apply_gradients(utils.aggregate_gradients(actor_gradients), args.lr)
 
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')
@@ -282,10 +277,10 @@ def main():
                            reset_hit, avg_job_duration, entropy_weight])
 
         # decrease entropy weight
-        entropy_weight = decrease_var(entropy_weight, args.entropy_weight_min, args.entropy_weight_decay)
+        entropy_weight = utils.decrease_var(entropy_weight, args.entropy_weight_min, args.entropy_weight_decay)
 
         # decrease reset probability
-        reset_prob = decrease_var(reset_prob, args.reset_prob_min, args.reset_prob_decay)
+        reset_prob = utils.decrease_var(reset_prob, args.reset_prob_min, args.reset_prob_decay)
 
         if ep % args.model_save_interval == 0:
             main_actor_agent.save_model(args.model_folder + 'model_ep_' + str(ep))
