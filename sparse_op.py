@@ -13,7 +13,7 @@ class SparseMat(object):
     def add(self, row, col, data):
         self.row.append(row)
         self.col.append(col)
-        self.data.append(data)
+        self.data.append(data
 
     def get_col(self):
         return np.array(self.col)

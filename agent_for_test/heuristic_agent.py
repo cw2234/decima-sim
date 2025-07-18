@@ -1,5 +1,5 @@
 import numpy as np
-from param import *
+from param import args
 from agent import Agent
 from spark_env.job_dag import JobDAG
 from spark_env.node import Node
