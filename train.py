@@ -166,8 +166,6 @@ def main():
                'running_dag_mat': [], 'dag_summ_back_mat': [], 'node_act_vec': [], 'job_act_vec': [],
                'node_valid_mask': [], 'job_valid_mask': [], 'reward': [], 'wall_time': [], 'job_state_change': []}
 
-
-
         t1 = time.time()
         try:
             # run experiment
@@ -226,14 +224,14 @@ def main():
             # regular reward
             rewards = np.array([r for (r, t) in zip(batch_reward, diff_time)])
 
+        # 累积奖励
         cum_reward = utils.discount(rewards, args.gamma)
-
 
         # compute baseline，返回的是list，但现在只有一个agent
         baselines = compute_baselines.get_piecewise_linear_fit_baseline([cum_reward], [batch_time[1:]])
 
         # 变成一项
-        baselines = baselines[0] # 一个agent的
+        baselines = baselines[0]  # 一个agent的
         # give worker back the advantage
         batch_adv = cum_reward - baselines
         batch_adv = np.reshape(batch_adv, [len(batch_adv), 1])
@@ -260,11 +258,22 @@ def main():
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')
 
+
         # 打印到tensorboard
-        tf_logger.log(ep, [action_loss, entropy, value_loss,
-                           len(baselines), avg_per_step_reward * args.reward_scale,
-                           cum_reward[0], reset_prob, num_finished_jobs,
-                           reset_hit, avg_job_duration, entropy_weight])
+        tf_logger.log(ep,
+                      [
+                          action_loss,  # actor_loss
+                          entropy,  # entropy
+                          value_loss,  # value_loss
+                          len(baselines),  # episode_length
+                          avg_per_step_reward * args.reward_scale,  # average_reward_per_second
+                          cum_reward[0],  # sum_reward
+                          reset_prob,  # reset_probability
+                          num_finished_jobs,  # num_jobs
+                          reset_hit,  # reset_hit
+                          avg_job_duration,  # average_job_duration
+                          entropy_weight  # entropy_weight
+                      ])
 
         # decrease entropy weight
         entropy_weight = utils.decrease_var(entropy_weight, args.entropy_weight_min, args.entropy_weight_decay)

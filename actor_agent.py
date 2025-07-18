@@ -2,10 +2,9 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.layers as tl
 import bisect
-from param import *
-from utils import *
-from tf_op import *
-from msg_passing_path import *
+from param import args
+import tf_op
+import msg_passing_path
 from gcn import GraphCNN
 from gsn import GraphSNN
 from agent import Agent
@@ -15,7 +14,7 @@ from spark_env.node import Node
 
 class ActorAgent(Agent):
     def __init__(self, sess, node_input_dim, job_input_dim, hid_dims, output_dim,
-                 max_depth, executor_levels, eps=1e-6, act_fn=leaky_relu,
+                 max_depth, executor_levels, eps=1e-6, act_fn=tf_op.leaky_relu,
                  optimizer=tf.train.AdamOptimizer, scope='actor_agent'):
 
         Agent.__init__(self)
@@ -33,7 +32,7 @@ class ActorAgent(Agent):
         self.scope = scope
 
         # for computing and storing message passing path
-        self.postman = Postman()
+        self.postman = msg_passing_path.Postman()
 
         # node input dimension: [total_num_nodes, num_features]
         self.node_inputs = tf.placeholder(tf.float32, [None, self.node_input_dim])
@@ -102,8 +101,7 @@ class ActorAgent(Agent):
 
         # actor loss due to advantge (negated)
         self.adv_loss = tf.reduce_sum(tf.multiply(
-            tf.log(self.selected_node_prob * self.selected_job_prob + \
-                   self.eps), -self.adv))
+            tf.log(self.selected_node_prob * self.selected_job_prob + self.eps), -self.adv))
 
         # node_entropy
         self.node_entropy = tf.reduce_sum(tf.multiply(
@@ -116,8 +114,7 @@ class ActorAgent(Agent):
             [tf.shape(self.node_act_probs)[0], -1])
 
         # job entropy
-        self.job_entropy = \
-            tf.reduce_sum(tf.multiply(self.prob_each_job,
+        self.job_entropy = tf.reduce_sum(tf.multiply(self.prob_each_job,
                                       tf.reduce_sum(tf.multiply(self.job_act_probs,
                                                                 tf.log(self.job_act_probs + self.eps)),
                                                     reduction_indices=2)))
@@ -126,8 +123,7 @@ class ActorAgent(Agent):
         self.entropy_loss = self.node_entropy + self.job_entropy
 
         # normalize entropy
-        self.entropy_loss /= \
-            (tf.log(tf.cast(tf.shape(self.node_act_probs)[1], tf.float32)) + \
+        self.entropy_loss /= (tf.log(tf.cast(tf.shape(self.node_act_probs)[1], tf.float32)) +
              tf.log(float(len(self.executor_levels))))
         # normalize over batch size (note: adv_loss is sum)
         # * tf.cast(tf.shape(self.node_act_probs)[0], tf.float32)
@@ -140,8 +136,7 @@ class ActorAgent(Agent):
             tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
 
         # operations for setting network parameters
-        self.input_params, self.set_params_op = \
-            self.define_params_op()
+        self.input_params, self.set_params_op = self.define_params_op()
 
         # actor gradients
         self.act_gradients = tf.gradients(self.act_loss, self.params)
@@ -153,8 +148,7 @@ class ActorAgent(Agent):
         self.act_opt = self.optimizer(self.lr_rate).minimize(self.act_loss)
 
         # apply gradient directly to update parameters
-        self.apply_grads = self.optimizer(self.lr_rate). \
-            apply_gradients(zip(self.act_gradients, self.params))
+        self.apply_grads = self.optimizer(self.lr_rate).apply_gradients(zip(self.act_gradients, self.params))
 
         # network paramter saver
         self.saver = tf.train.Saver(max_to_keep=args.num_saved_models)
@@ -231,7 +225,7 @@ class ActorAgent(Agent):
                 gsn_dag_summ_reshape,
                 gsn_global_summ_extend_job], axis=2)
 
-            expanded_state = expand_act_on_state(
+            expanded_state = tf_op.expand_act_on_state(
                 merge_job, [l / 50.0 for l in self.executor_levels])
 
             job_hid_0 = tl.fully_connected(expanded_state, 32, activation_fn=act_fn)
@@ -295,39 +289,49 @@ class ActorAgent(Agent):
                       running_dags_mat, dag_summ_backward_map,
                       node_act_vec, job_act_vec, adv, entropy_weight):
 
-        return self.sess.run([self.act_gradients,
-                              [self.adv_loss, self.entropy_loss]],
-                             feed_dict={i: d for i, d in zip(
-                                 [self.node_inputs] + [self.job_inputs] + \
-                                 [self.node_valid_mask] + [self.job_valid_mask] + \
-                                 self.gcn.adj_mats + self.gcn.masks + self.gsn.summ_mats + \
-                                 [self.dag_summ_backward_map] + [self.node_act_vec] + \
-                                 [self.job_act_vec] + [self.adv] + [self.entropy_weight], \
-                                 [node_inputs] + [job_inputs] + \
-                                 [node_valid_mask] + [job_valid_mask] + \
-                                 gcn_mats + gcn_masks + \
-                                 [summ_mats, running_dags_mat] + \
-                                 [dag_summ_backward_map] + [node_act_vec] + \
-                                 [job_act_vec] + [adv] + [entropy_weight])
-                                        })
+        return self.sess.run([self.act_gradients, [self.adv_loss, self.entropy_loss]],  # 要计算的
+                             feed_dict=  # 所需的数据
+                             {
+                                 self.node_inputs: node_inputs,
+                                 self.job_inputs: job_inputs,
+                                 self.node_valid_mask: node_valid_mask,
+                                 self.job_valid_mask: job_valid_mask,
+
+                                 # GCN相关占位符和数据
+                                 **{placeholder: data for placeholder, data in zip(self.gcn.adj_mats, gcn_mats)},
+                                 **{placeholder: data for placeholder, data in zip(self.gcn.masks, gcn_masks)},
+                                 # GSN相关占位符和数据
+                                 **{placeholder: data for placeholder, data in
+                                    zip(self.gsn.summ_mats, [summ_mats, running_dags_mat])},
+
+                                 self.dag_summ_backward_map: dag_summ_backward_map,
+                                 self.node_act_vec: node_act_vec,
+                                 self.job_act_vec: job_act_vec,
+                                 self.adv: adv,
+                                 self.entropy_weight: entropy_weight
+                             })
 
     def predict(self, node_inputs, job_inputs,
                 node_valid_mask, job_valid_mask,
                 gcn_mats, gcn_masks, summ_mats,
                 running_dags_mat, dag_summ_backward_map):
-        return self.sess.run([self.node_act_probs, self.job_act_probs,
-                              self.node_acts, self.job_acts],
-                             feed_dict={i: d for i, d in zip(
-                                 [self.node_inputs] + [self.job_inputs] +
-                                 [self.node_valid_mask] + [self.job_valid_mask] +
-                                 self.gcn.adj_mats + self.gcn.masks + self.gsn.summ_mats +
-                                 [self.dag_summ_backward_map],
-                                 [node_inputs] + [job_inputs] +
-                                 [node_valid_mask] + [job_valid_mask] +
-                                 gcn_mats + gcn_masks +
-                                 [summ_mats, running_dags_mat] +
-                                 [dag_summ_backward_map])
-                                        })
+        return self.sess.run([self.node_act_probs, self.job_act_probs, self.node_acts, self.job_acts],
+                             feed_dict=
+                             {
+                                 self.node_inputs: node_inputs,
+                                 self.job_inputs: job_inputs,
+                                 self.node_valid_mask: node_valid_mask,
+                                 self.job_valid_mask: job_valid_mask,
+
+                                 # GCN相关占位符和数据
+                                 **{placeholder: data for placeholder, data in zip(self.gcn.adj_mats, gcn_mats)},
+                                 **{placeholder: data for placeholder, data in zip(self.gcn.masks, gcn_masks)},
+                                 # GSN相关占位符和数据
+                                 **{placeholder: data for placeholder, data in
+                                    zip(self.gsn.summ_mats, [summ_mats, running_dags_mat])},
+
+                                 self.dag_summ_backward_map: dag_summ_backward_map
+                             })
 
     def set_params(self, input_params):
         self.sess.run(self.set_params_op, feed_dict={
@@ -338,9 +342,14 @@ class ActorAgent(Agent):
         """
         Translate the observation to matrix form
         """
-        job_dags, source_job, num_source_exec, \
-            frontier_nodes, executor_limits, \
-            exec_commit, moving_executors, action_map = obs
+        (job_dags,
+         source_job,
+         num_source_exec,
+         frontier_nodes,
+         executor_limits,
+         exec_commit,
+         moving_executors,
+         action_map) = obs
 
         # compute total number of nodes
         total_num_nodes = int(np.sum(job_dag.num_nodes for job_dag in job_dags))
@@ -395,9 +404,7 @@ class ActorAgent(Agent):
                 node_inputs[node_idx, :3] = job_inputs[job_idx, :3]
 
                 # work on the node
-                node_inputs[node_idx, 3] = \
-                    (node.num_tasks - node.next_task_idx) * \
-                    node.tasks[-1].duration / 100000.0
+                node_inputs[node_idx, 3] = (node.num_tasks - node.next_task_idx) * node.tasks[-1].duration / 100000.0
 
                 # number of tasks left
                 node_inputs[node_idx, 4] = (node.num_tasks - node.next_task_idx) / 200.0
@@ -423,8 +430,7 @@ class ActorAgent(Agent):
         for job_dag in job_dags:
             # new executor level depends on the source of executor
             if job_dag is source_job:
-                least_exec_amount = \
-                    exec_map[job_dag] - num_source_exec + 1
+                least_exec_amount =  exec_map[job_dag] - num_source_exec + 1
                 # +1 because we want at least one executor
                 # for this job
             else:
@@ -483,45 +489,78 @@ class ActorAgent(Agent):
          job_dags_changed) = self.postman.get_msg_path(job_dags)
 
         # get node and job valid masks
-        node_valid_mask, job_valid_mask = self.get_valid_masks(job_dags, frontier_nodes,
-                                 source_job, num_source_exec, exec_map, action_map)
+        node_valid_mask, job_valid_mask = self.get_valid_masks(job_dags,
+                                                               frontier_nodes,
+                                                               source_job,
+                                                               num_source_exec,
+                                                               exec_map,
+                                                               action_map)
 
         # get summarization path that ignores finished nodes
-        summ_mats = get_unfinished_nodes_summ_mat(job_dags)
+        summ_mats = msg_passing_path.get_unfinished_nodes_summ_mat(job_dags)
 
         # invoke learning model
-        node_act_probs, job_act_probs, node_acts, job_acts = self.predict(node_inputs, job_inputs,
-                         node_valid_mask, job_valid_mask,
-                         gcn_mats, gcn_masks, summ_mats,
-                         running_dags_mat, dag_summ_backward_map)
+        (node_act_probs,
+         job_act_probs,
+         node_acts,
+         job_acts) = self.predict(node_inputs,
+                                  job_inputs,
+                                  node_valid_mask,
+                                  job_valid_mask,
+                                  gcn_mats,
+                                  gcn_masks,
+                                  summ_mats,
+                                  running_dags_mat,
+                                  dag_summ_backward_map)
 
-        return (node_acts, job_acts,
-                node_act_probs, job_act_probs,
-                node_inputs, job_inputs,
-                node_valid_mask, job_valid_mask,
-                gcn_mats, gcn_masks, summ_mats,
-                running_dags_mat, dag_summ_backward_map,
-                exec_map, job_dags_changed)
+        return (node_acts,
+                job_acts,
+                node_act_probs,
+                job_act_probs,
+                node_inputs,
+                job_inputs,
+                node_valid_mask,
+                job_valid_mask,
+                gcn_mats,
+                gcn_masks,
+                summ_mats,
+                running_dags_mat,
+                dag_summ_backward_map,
+                exec_map,
+                job_dags_changed)
 
     def get_action(self, obs):
 
         # parse observation
-        (job_dags, source_job, num_source_exec,
-         frontier_nodes, executor_limits,
-         exec_commit, moving_executors, action_map) = obs
+        (job_dags,
+         source_job,
+         num_source_exec,
+         frontier_nodes,
+         executor_limits,
+         exec_commit,
+         moving_executors,
+         action_map) = obs
 
         if len(frontier_nodes) == 0:
             # no action to take
             return None, num_source_exec
 
         # invoking the learning model
-        (node_act, job_act,
-         node_act_probs, job_act_probs,
-         node_inputs, job_inputs,
-         node_valid_mask, job_valid_mask,
-         gcn_mats, gcn_masks, summ_mats,
-         running_dags_mat, dag_summ_backward_map,
-         exec_map, job_dags_changed) = self.invoke_model(obs)
+        (node_act,
+         job_act,
+         node_act_probs,
+         job_act_probs,
+         node_inputs,
+         job_inputs,
+         node_valid_mask,
+         job_valid_mask,
+         gcn_mats,
+         gcn_masks,
+         summ_mats,
+         running_dags_mat,
+         dag_summ_backward_map,
+         exec_map,
+         job_dags_changed) = self.invoke_model(obs)
 
         if sum(node_valid_mask[0, :]) == 0:
             # no node is valid to assign

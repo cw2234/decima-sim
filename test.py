@@ -71,13 +71,10 @@ for exp in range(args.num_exp):
         if args.canvs_visualization:
             visualize_dag_time_save_pdf(
                 env.finished_job_dags, env.executors,
-                args.result_folder + 'visualization_exp_' + \
-                str(exp) + '_scheme_' + scheme + \
-                '.png', plot_type='app')
+                args.result_folder + 'visualization_exp_' + str(exp) + '_scheme_' + scheme + '.png', plot_type='app')
         else:
             visualize_executor_usage(env.finished_job_dags,
-                args.result_folder + 'visualization_exp_' + \
-                str(exp) + '_scheme_' + scheme + '.png')
+                args.result_folder + 'visualization_exp_' + str(exp) + '_scheme_' + scheme + '.png')
 
 
     # plot CDF of performance

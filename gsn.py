@@ -32,11 +32,9 @@ class GraphSNN(object):
             tf.float32, [None, None]) for _ in range(self.summ_levels)]
 
         # initialize summarization parameters for each hierarchy
-        self.dag_weights, self.dag_bias = \
-            self.init(self.input_dim, self.hid_dims, self.output_dim)
+        self.dag_weights, self.dag_bias = self.init(self.input_dim, self.hid_dims, self.output_dim)
 
-        self.global_weights, self.global_bias = \
-            self.init(self.output_dim, self.hid_dims, self.output_dim)
+        self.global_weights, self.global_bias = self.init(self.output_dim, self.hid_dims, self.output_dim)
 
         # graph summarization operation
         self.summaries = self.summarize()
