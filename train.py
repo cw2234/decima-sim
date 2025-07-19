@@ -299,6 +299,7 @@ def main():
             # The try condition breaks in some agent (should
             # happen rarely), throw out this rollout and try
             # again for next iteration (TODO: log this event)
+            print("a agent panic continue!")
             for i in range(args.num_agents):
                 adv_queues[i].put(None)
             continue
