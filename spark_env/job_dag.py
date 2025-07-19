@@ -47,8 +47,7 @@ class JobDAG(object):
         self.completion_time = np.inf
 
         # map a executor number to an interval
-        self.executor_interval_map = \
-            self.get_executor_interval_map()
+        self.executor_interval_map = self.get_executor_interval_map()
 
     def assign_job_dag_to_node(self):
         for node in self.nodes:

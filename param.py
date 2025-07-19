@@ -11,8 +11,8 @@ parser.add_argument('--num_proc', type=int, default=1,
                     help='number of processors (default: 1)')
 parser.add_argument('--num_exp', type=int, default=10,
                     help='number of experiments (default: 10)')
-parser.add_argument('--query_type', type=str, default='tpch',
-                    help='query type (default: tpch)')
+# parser.add_argument('--query_type', type=str, default='tpch',
+#                     help='query type (default: tpch)')
 parser.add_argument('--job_folder', type=str, default='./spark_env/tpch/',
                     help='job folder path (default: ./spark_env/tpch/)')
 parser.add_argument('--result_folder', type=str, default='./results/',

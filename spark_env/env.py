@@ -369,8 +369,8 @@ class Environment(object):
             executor.reset()
         self.free_executors.reset(self.executors)
         # generate a set of new jobs
-        self.job_dags = generate_jobs(
-            self.np_random, self.timeline, self.wall_time)
+        self.job_dags = generate_jobs(self.np_random, self.timeline, self.wall_time)
+
         # map action to dag_idx and node_idx
         self.action_map = compute_act_map(self.job_dags)
         # add initial set of jobs in the system

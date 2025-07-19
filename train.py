@@ -16,7 +16,7 @@ from actor_agent import ActorAgent
 from tf_logger import TFLogger
 
 
-def invoke_model(actor_agent, obs, experience):
+def invoke_model(actor_agent: ActorAgent, obs, experience):
     # parse observation
     (job_dags,
      source_job,
@@ -112,6 +112,7 @@ def main():
     # model evaluation seed
     tf.set_random_seed(0)
 
+    # 创建环境
     env = Environment()
     config = tf.ConfigProto(device_count={'GPU': args.worker_num_gpu},
                                    gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=args.worker_gpu_fraction))

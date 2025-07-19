@@ -13,10 +13,9 @@ from spark_env.job_dag import JobDAG
 def load_job(file_path, query_size, query_idx, wall_time, np_random):
     query_path = file_path + query_size + '/'
 
-    adj_mat = np.load(
-        query_path + 'adj_mat_' + str(query_idx) + '.npy', allow_pickle=True)
-    task_durations = np.load(
-        query_path + 'task_duration_' + str(query_idx) + '.npy', allow_pickle=True).item()
+    adj_mat = np.load(query_path + 'adj_mat_' + str(query_idx) + '.npy', allow_pickle=True)
+
+    task_durations = np.load(query_path + 'task_duration_' + str(query_idx) + '.npy', allow_pickle=True).item()
 
     assert adj_mat.shape[0] == adj_mat.shape[1]
     assert adj_mat.shape[0] == len(task_durations)
@@ -27,8 +26,7 @@ def load_job(file_path, query_size, query_idx, wall_time, np_random):
         task_duration = task_durations[n]
         e = next(iter(task_duration['first_wave']))
 
-        num_tasks = len(task_duration['first_wave'][e]) + \
-                    len(task_duration['rest_wave'][e])
+        num_tasks = len(task_duration['first_wave'][e]) + len(task_duration['rest_wave'][e])
 
         # remove fresh duration from first wave duration
         # drag nearest neighbor first wave duration to empty spots
@@ -61,8 +59,7 @@ def load_job(file_path, query_size, query_idx, wall_time, np_random):
             node.descendant_nodes = recursive_find_descendant(node)
 
     # generate DAG
-    job_dag = JobDAG(nodes, adj_mat,
-        args.query_type + '-' + query_size + '-' + str(query_idx))
+    job_dag = JobDAG(nodes, adj_mat, 'tpch' + '-' + query_size + '-' + str(query_idx))
 
     return job_dag
 
@@ -107,12 +104,8 @@ def recursive_find_descendant(node):
         return node.descendant_nodes
 
 
-def generate_alibaba_jobs(np_random, timeline, wall_time):
-    pass
-
-
-def generate_tpch_jobs(np_random, timeline, wall_time):
-
+# 创tpch任务
+def generate_jobs(np_random, timeline, wall_time):
     job_dags = utils.OrderedSet()
     t = 0
 
@@ -121,8 +114,7 @@ def generate_tpch_jobs(np_random, timeline, wall_time):
         query_idx = str(np_random.randint(args.tpch_num) + 1)
         query_size = args.tpch_size[np_random.randint(len(args.tpch_size))]
         # generate job
-        job_dag = load_job(
-            args.job_folder, query_size, query_idx, wall_time, np_random)
+        job_dag = load_job(args.job_folder, query_size, query_idx, wall_time, np_random)
         # job already arrived, put in job_dags
         job_dag.start_time = t
         job_dag.arrived = True
@@ -140,19 +132,5 @@ def generate_tpch_jobs(np_random, timeline, wall_time):
         # push into timeline
         job_dag.start_time = t
         timeline.push(t, job_dag)
-
-    return job_dags
-
-
-def generate_jobs(np_random, timeline, wall_time):
-    if args.query_type == 'tpch':
-        job_dags = generate_tpch_jobs(np_random, timeline, wall_time)
-
-    elif args.query_type == 'alibaba':
-        job_dags = generate_alibaba_jobs(np_random, timeline, wall_time)
-
-    else:
-        print('Invalid query type ' + args.query_type)
-        exit(1)
 
     return job_dags
