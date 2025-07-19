@@ -132,14 +132,11 @@ class ActorAgent(Agent):
         self.act_loss = self.adv_loss + self.entropy_weight * self.entropy_loss
 
         # get training parameters
-        self.params = tf.get_collection(
-            tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
+        training_parameters= tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
 
-        # operations for setting network parameters
-        self.input_params, self.set_params_op = self.define_params_op()
 
         # actor gradients
-        self.act_gradients = tf.gradients(self.act_loss, self.params)
+        self.act_gradients = tf.gradients(self.act_loss, training_parameters)
 
         # adaptive learning rate
         self.lr_rate = tf.placeholder(tf.float32, shape=[])
@@ -148,7 +145,7 @@ class ActorAgent(Agent):
         self.act_opt = self.optimizer(self.lr_rate).minimize(self.act_loss)
 
         # apply gradient directly to update parameters
-        self.apply_grads = self.optimizer(self.lr_rate).apply_gradients(zip(self.act_gradients, self.params))
+        self.apply_grads = self.optimizer(self.lr_rate).apply_gradients(zip(self.act_gradients, training_parameters))
 
         # network paramter saver
         self.saver = tf.train.Saver(max_to_keep=args.num_saved_models)
@@ -259,16 +256,6 @@ class ActorAgent(Agent):
                 gradients + [lr_rate])
         })
 
-    def define_params_op(self):
-        # define operations for setting network parameters
-        input_params = []
-        for param in self.params:
-            input_params.append(
-                tf.placeholder(tf.float32, shape=param.get_shape()))
-        set_params_op = []
-        for idx, param in enumerate(input_params):
-            set_params_op.append(self.params[idx].assign(param))
-        return input_params, set_params_op
 
     def gcn_forward(self, node_inputs, summ_mats):
         return self.sess.run([self.gsn.summaries],
@@ -277,8 +264,6 @@ class ActorAgent(Agent):
                                  [node_inputs] + summ_mats)
                                         })
 
-    def get_params(self):
-        return self.sess.run(self.params)
 
     def save_model(self, file_path):
         self.saver.save(self.sess, file_path)
@@ -332,11 +317,6 @@ class ActorAgent(Agent):
 
                                  self.dag_summ_backward_map: dag_summ_backward_map
                              })
-
-    def set_params(self, input_params):
-        self.sess.run(self.set_params_op, feed_dict={
-            i: d for i, d in zip(self.input_params, input_params)
-        })
 
     def translate_state(self, obs):
         """

@@ -16,7 +16,7 @@ from actor_agent import ActorAgent
 from tf_logger import TFLogger
 
 
-def invoke_model(actor_agent, obs, exp):
+def invoke_model(actor_agent, obs, experience):
     # parse observation
     (job_dags,
      source_job,
@@ -83,20 +83,20 @@ def invoke_model(actor_agent, obs, exp):
     job_act_vec[0, job_idx, job_act[0, job_idx]] = 1
 
     # store experience
-    exp['node_inputs'].append(node_inputs)
-    exp['job_inputs'].append(job_inputs)
-    exp['summ_mats'].append(summ_mats)
-    exp['running_dag_mat'].append(running_dags_mat)
-    exp['node_act_vec'].append(node_act_vec)
-    exp['job_act_vec'].append(job_act_vec)
-    exp['node_valid_mask'].append(node_valid_mask)
-    exp['job_valid_mask'].append(job_valid_mask)
-    exp['job_state_change'].append(job_dags_changed)
+    experience['node_inputs'].append(node_inputs)
+    experience['job_inputs'].append(job_inputs)
+    experience['summ_mats'].append(summ_mats)
+    experience['running_dag_mat'].append(running_dags_mat)
+    experience['node_act_vec'].append(node_act_vec)
+    experience['job_act_vec'].append(job_act_vec)
+    experience['node_valid_mask'].append(node_valid_mask)
+    experience['job_valid_mask'].append(job_valid_mask)
+    experience['job_state_change'].append(job_dags_changed)
 
     if job_dags_changed:
-        exp['gcn_mats'].append(gcn_mats)
-        exp['gcn_masks'].append(gcn_masks)
-        exp['dag_summ_back_mat'].append(dag_summ_backward_map)
+        experience['gcn_mats'].append(gcn_mats)
+        experience['gcn_masks'].append(gcn_masks)
+        experience['dag_summ_back_mat'].append(dag_summ_backward_map)
 
     return node, use_exec
 
@@ -113,23 +113,15 @@ def main():
     tf.set_random_seed(0)
 
     env = Environment()
-    worker_config = tf.ConfigProto(device_count={'GPU': args.worker_num_gpu},
+    config = tf.ConfigProto(device_count={'GPU': args.worker_num_gpu},
                                    gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=args.worker_gpu_fraction))
-    worker_sess = tf.Session(config=worker_config)
-    worker_actor_agent = ActorAgent(worker_sess, args.node_input_dim, args.job_input_dim, args.hid_dims,
+    sess = tf.Session(config=config)
+    actor_agent = ActorAgent(sess, args.node_input_dim, args.job_input_dim, args.hid_dims,
                                     args.output_dim,
                                     args.max_depth, range(1, args.exec_cap + 1))
 
-    # gpu configuration
-    main_config = tf.ConfigProto(device_count={'GPU': args.master_num_gpu},
-                                 gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=args.master_gpu_fraction))
-    main_sess = tf.Session(config=main_config)
-    # set up actor agent
-    main_actor_agent = ActorAgent(main_sess, args.node_input_dim, args.job_input_dim, args.hid_dims, args.output_dim,
-                                  args.max_depth, range(1, args.exec_cap + 1), scope='main_actor')
-
     # tensorboard logging
-    tf_logger = TFLogger(main_sess,
+    tf_logger = TFLogger(sess,
                          ['actor_loss', 'entropy', 'value_loss', 'episode_length', 'average_reward_per_second',
                           'sum_reward', 'reset_probability', 'num_jobs', 'reset_hit', 'average_job_duration',
                           'entropy_weight'])
@@ -147,24 +139,31 @@ def main():
     for ep in range(1, args.num_ep):
         print('training epoch', ep)
 
-        # synchronize the model parameters for each training agent
-        actor_params = main_actor_agent.get_params()
-
         # generate max time stochastically based on reset prob
         max_time = utils.generate_coin_flips(reset_prob)
 
         seed = args.seed + ep
-        # synchronize model
-        worker_actor_agent.set_params(actor_params)
-
         # reset environment
         env.seed(seed)
         env.reset(max_time=max_time)
 
         # set up storage for experience
-        exp = {'node_inputs': [], 'job_inputs': [], 'gcn_mats': [], 'gcn_masks': [], 'summ_mats': [],
-               'running_dag_mat': [], 'dag_summ_back_mat': [], 'node_act_vec': [], 'job_act_vec': [],
-               'node_valid_mask': [], 'job_valid_mask': [], 'reward': [], 'wall_time': [], 'job_state_change': []}
+        experience = {
+            'node_inputs': [],
+            'job_inputs': [],
+            'gcn_mats': [],
+            'gcn_masks': [],
+            'summ_mats': [],
+            'running_dag_mat': [],
+            'dag_summ_back_mat': [],
+            'node_act_vec': [],
+            'job_act_vec': [],
+            'node_valid_mask': [],
+            'job_valid_mask': [],
+            'reward': [],
+            'wall_time': [],
+            'job_state_change': []
+        }
 
         t1 = time.time()
         try:
@@ -173,29 +172,29 @@ def main():
             done = False
 
             # initial time
-            exp['wall_time'].append(env.wall_time.curr_time)
+            experience['wall_time'].append(env.wall_time.curr_time)
             while not done:
 
-                node, use_exec = invoke_model(worker_actor_agent, obs, exp)
+                node, use_exec = invoke_model(actor_agent, obs, experience)
 
                 obs, reward, done = env.step(node, use_exec)
 
                 if node is not None:
                     # valid action, store reward and time
-                    exp['reward'].append(reward)
-                    exp['wall_time'].append(env.wall_time.curr_time)
-                elif len(exp['reward']) > 0:
+                    experience['reward'].append(reward)
+                    experience['wall_time'].append(env.wall_time.curr_time)
+                elif len(experience['reward']) > 0:
                     # Note: if we skip the reward when node is None
                     # (i.e., no available actions), the sneaky
                     # agent will learn to exhaustively pick all
                     # nodes in one scheduling round, in order to
                     # avoid the negative reward
-                    exp['reward'][-1] += reward
-                    exp['wall_time'][-1] = env.wall_time.curr_time
+                    experience['reward'][-1] += reward
+                    experience['wall_time'][-1] = env.wall_time.curr_time
 
             # report reward signals to master
-            assert len(exp['node_inputs']) == len(exp['reward'])
-            result = [exp['reward'], exp['wall_time'], len(env.finished_job_dags),
+            assert len(experience['node_inputs']) == len(experience['reward'])
+            result = [experience['reward'], experience['wall_time'], len(env.finished_job_dags),
                       np.mean([j.completion_time - j.start_time for j in env.finished_job_dags]),
                       env.wall_time.curr_time >= env.max_time]
 
@@ -237,7 +236,7 @@ def main():
         batch_adv = np.reshape(batch_adv, [len(batch_adv), 1])
 
         # compute gradients
-        actor_gradient, loss = compute_gradients.compute_actor_gradients(worker_actor_agent, exp, batch_adv,
+        actor_gradient, loss = compute_gradients.compute_actor_gradients(actor_agent, experience, batch_adv,
                                                                          entropy_weight)
 
         t3 = time.time()
@@ -253,11 +252,10 @@ def main():
         t4 = time.time()
         print('worker send back gradients', t4 - t3, 'seconds')
 
-        main_actor_agent.apply_gradients(utils.aggregate_gradients(actor_gradients), args.lr)
+        actor_agent.apply_gradients(utils.aggregate_gradients(actor_gradients), args.lr)
 
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')
-
 
         # 打印到tensorboard
         tf_logger.log(ep,
@@ -282,9 +280,9 @@ def main():
         reset_prob = utils.decrease_var(reset_prob, args.reset_prob_min, args.reset_prob_decay)
 
         if ep % args.model_save_interval == 0:
-            main_actor_agent.save_model(args.model_folder + 'model_ep_' + str(ep))
+            actor_agent.save_model(args.model_folder + 'model_ep_' + str(ep))
 
-    main_sess.close()
+    sess.close()
 
 
 if __name__ == '__main__':
