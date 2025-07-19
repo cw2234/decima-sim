@@ -95,8 +95,8 @@ parser.add_argument('--max_depth', type=int, default=8,
                     help='Maximum depth of root-leaf message passing (default: 8)')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='learning rate (default: 0.001)')
-parser.add_argument('--ba_size', type=int, default=64,
-                    help='Batch size (default: 64)')
+# parser.add_argument('--ba_size', type=int, default=64,
+#                     help='Batch size (default: 64)')
 parser.add_argument('--gamma', type=float, default=1,
                     help='discount factor (default: 1)')
 parser.add_argument('--early_terminate', type=int, default=0,

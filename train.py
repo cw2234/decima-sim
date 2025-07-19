@@ -230,7 +230,7 @@ def main():
         baselines = compute_baselines.get_piecewise_linear_fit_baseline([cum_reward], [batch_time[1:]])
 
         # 变成一项
-        baselines = baselines[0]  # 一个agent的
+        baselines = baselines[0]  # 一个agent的baseline
         # give worker back the advantage
         batch_adv = cum_reward - baselines
         batch_adv = np.reshape(batch_adv, [len(batch_adv), 1])
@@ -242,17 +242,16 @@ def main():
         t3 = time.time()
         print('advantage ready', t3 - t2, 'seconds')
 
-        actor_gradients = [actor_gradient]  # 本来是多个agent
-
         # 用于tensorboard日志
         action_loss = loss[0]
         entropy = -loss[1] / float(cum_reward.shape[0])
         value_loss = loss[2]
 
+
         t4 = time.time()
         print('worker send back gradients', t4 - t3, 'seconds')
 
-        actor_agent.apply_gradients(utils.aggregate_gradients(actor_gradients), args.lr)
+        actor_agent.apply_gradients(actor_gradient, args.lr) # 应用梯度
 
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')

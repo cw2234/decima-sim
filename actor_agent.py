@@ -257,14 +257,6 @@ class ActorAgent(Agent):
         })
 
 
-    def gcn_forward(self, node_inputs, summ_mats):
-        return self.sess.run([self.gsn.summaries],
-                             feed_dict={i: d for i, d in zip(
-                                 [self.node_inputs] + self.gsn.summ_mats,
-                                 [node_inputs] + summ_mats)
-                                        })
-
-
     def save_model(self, file_path):
         self.saver.save(self.sess, file_path)
 
