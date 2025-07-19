@@ -25,5 +25,14 @@ conda create -n tensorflowEnv python=3.5 tensorflow=1.5 networkx matplotlib
 conda install tensorflow=1.4 networkx matplotlib
 conda create -n tf1_4 python=3.6 tensorflow=1.4 numpy=1.16 networkx matplotlib
 ```
+仔细分析强化学习代码中神经网络各个输入输出的依赖关系，将项目中使用tensorflow及与tensorflow相关模块的代码改成使用pytorch2.x的代码。
+需要按顺序修改
+1. tf_op.py
+2. gcn.py
+3. gsn.py
+4. sparse_op.py
+5. msg_passing_path.py
+使用pytorch风格的神经网络
+
 
 python train.py --exec_cap 50 --num_init_dags 1 --num_stream_dags 200 --reset_prob 5e-7 --reset_prob_min 5e-8 --reset_prob_decay 4e-10 --diff_reward_enabled 1 --num_agents 16 --model_save_interval 100 --model_folder ./models/stream_200_job_diff_reward_reset_5e-7_5e-8/
