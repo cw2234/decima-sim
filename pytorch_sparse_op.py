@@ -84,7 +84,7 @@ def absorb_sp_mats(in_mats, depth):
         indices = np.asmatrix([row_idx, col_idx])
         indices_torch = torch.tensor(indices)
         data_torch = torch.tensor(data)
-        sp_mats.append(torch.sparse_coo_tensor(indices_torch, data_torch, (shape, shape)))
+        sp_mats.append(torch.sparse_coo_tensor(indices_torch, data_torch, (shape, shape), dtype=torch.float32).coalesce())
 
     return sp_mats
 
@@ -128,22 +128,21 @@ def expand_sp_mat(sp, exp_step):
         shape = 0
         base = 0
         for i in range(exp_step):
-            indices = sp[d].indices.transpose()
+            indices = sp[d].indices()
             row_idx.append(np.squeeze(np.asarray(indices[0, :]) + base))
             col_idx.append(np.squeeze(np.asarray(indices[1, :]) + base))
-            data.append(sp[d].values)
-            shape += sp[d].dense_shape[0]
-            base += sp[d].dense_shape[0]
+            data.append(sp[d].values())
+            shape += sp[d].shape[0]
+            base += sp[d].shape[0]
 
         row_idx = np.hstack(row_idx)
         col_idx = np.hstack(col_idx)
         data = np.hstack(data)
 
-        # indices = np.asmatrix([row_idx, col_idx]).transpose()
         indices = np.asmatrix([row_idx, col_idx])
         indices_torch = torch.tensor(indices)
         data_torch = torch.tensor(data)
-        extended_mat.append(torch.sparse_coo_tensor(indices_torch, data_torch, (shape, shape)))
+        extended_mat.append(torch.sparse_coo_tensor(indices_torch, data_torch, (shape, shape)).coalesce())
 
 
     return extended_mat
@@ -175,28 +174,28 @@ def merge_and_extend_sp_mat(sp):
     row_idx = []
     col_idx = []
     data = []
-    shape = (sp[0].dense_shape[0] * batch_size, sp[0].dense_shape[1] * batch_size)
+    shape = (sp[0].shape[0] * batch_size, sp[0].shape[1] * batch_size)
 
     row_base = 0
     col_base = 0
     for b in range(batch_size):
-        indices = sp[b].indices.transpose()
+        indices = sp[b].indices()
         row_idx.append(np.squeeze(np.asarray(indices[0, :]) + row_base))
         col_idx.append(np.squeeze(np.asarray(indices[1, :]) + col_base))
-        data.append(sp[b].values)
-        row_base += sp[b].dense_shape[0]
-        col_base += sp[b].dense_shape[1]
+        data.append(sp[b].values())
+        row_base += sp[b].shape[0]
+        col_base += sp[b].shape[1]
 
     row_idx = np.hstack(row_idx)
     col_idx = np.hstack(col_idx)
     data = np.hstack(data)
 
-    # indices = np.asmatrix([row_idx, col_idx]).transpose()
-    indices = np.asmatrix([row_idx, col_idx]).transpose()
+
+    indices = np.asmatrix([row_idx, col_idx])
 
     indices_torch = torch.tensor(indices)
     data_torch = torch.tensor(data)
-    extended_mat = torch.sparse_coo_tensor(indices_torch, data_torch, shape)
+    extended_mat = torch.sparse_coo_tensor(indices_torch, data_torch, shape).coalesce()
 
 
     return extended_mat

@@ -1,19 +1,22 @@
 import os
 
+from torch import no_grad
+
 # os.environ['CUDA_VISIBLE_DEVICES']=''
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import time
 import torch
 import numpy as np
-
+from time import localtime, strftime
 from param import args
 import utils
 from spark_env.env import Environment
 from average_reward import AveragePerStepReward
-import compute_baselines
-import compute_gradients
+import pytorch_compute_baselines
+import pytorch_compute_gradients
 from pytorch_actor_agent import ActorAgent
-# from tf_logger import TFLogger
+from torch.utils.tensorboard import SummaryWriter
+
 
 
 def invoke_model(actor_agent: ActorAgent, obs, experience):
@@ -56,7 +59,7 @@ def invoke_model(actor_agent: ActorAgent, obs, experience):
     assert node_valid_mask[0, node_act[0]] == 1
 
     # parse node action
-    node = action_map[node_act[0]]
+    node = action_map[node_act[0].item()]
 
     # find job index based on node
     job_idx = job_dags.index(node.job_dag)
@@ -75,11 +78,11 @@ def invoke_model(actor_agent: ActorAgent, obs, experience):
                    agent_exec_act, num_source_exec)
 
     # for storing the action vector in experience
-    node_act_vec = np.zeros(node_act_probs.shape)
+    node_act_vec = torch.zeros(node_act_probs.shape)
     node_act_vec[0, node_act[0]] = 1
 
     # for storing job index
-    job_act_vec = np.zeros(job_act_probs.shape)
+    job_act_vec = torch.zeros(job_act_probs.shape)
     job_act_vec[0, job_idx, job_act[0, job_idx]] = 1
 
     # store experience
@@ -124,11 +127,14 @@ def main():
         args.max_depth,
         range(1, args.exec_cap + 1))
 
+    optimizer = torch.optim.Adam(actor_agent.parameters(), lr=args.lr)
+
     # tensorboard logging
-    # tf_logger = TFLogger(sess,
-    #                      ['actor_loss', 'entropy', 'value_loss', 'episode_length', 'average_reward_per_second',
-    #                       'sum_reward', 'reset_probability', 'num_jobs', 'reset_hit', 'average_job_duration',
-    #                       'entropy_weight'])
+    log_dir = os.path.join(args.result_folder, args.model_folder, strftime("%Y-%m-%d-%H-%M-%S", localtime()))
+    print(log_dir)
+    tensorboard_writer = SummaryWriter(log_dir)
+
+
 
     # store average reward for computing differential rewards
     avg_reward_calculator = AveragePerStepReward(args.average_reward_storage_size)
@@ -178,8 +184,8 @@ def main():
             # initial time
             experience['wall_time'].append(env.wall_time.curr_time)
             while not done:
-
-                node, use_exec = invoke_model(actor_agent, obs, experience)
+                with torch.no_grad():
+                    node, use_exec = invoke_model(actor_agent, obs, experience)
 
                 obs, reward, done = env.step(node, use_exec)
 
@@ -231,16 +237,20 @@ def main():
         cum_reward = utils.discount(rewards, args.gamma)
 
         # compute baseline，返回的是list，但现在只有一个agent
-        baselines = compute_baselines.get_piecewise_linear_fit_baseline([cum_reward], [batch_time[1:]])
+        baselines = pytorch_compute_baselines.get_piecewise_linear_fit_baseline([cum_reward], [batch_time[1:]])
 
         # 变成一项
         baselines = baselines[0]  # 一个agent的baseline
         # give worker back the advantage
         batch_adv = cum_reward - baselines
         batch_adv = np.reshape(batch_adv, [len(batch_adv), 1])
+        batch_adv = torch.tensor(batch_adv)
 
         # compute gradients
-        actor_gradient, loss = compute_gradients.compute_actor_gradients(actor_agent, experience, batch_adv,
+        optimizer.zero_grad() # 清除梯度
+
+        # 累积梯度
+        loss = pytorch_compute_gradients.compute_actor_gradients(actor_agent, experience, batch_adv,
                                                                          entropy_weight)
 
         t3 = time.time()
@@ -254,12 +264,25 @@ def main():
         t4 = time.time()
         print('worker send back gradients', t4 - t3, 'seconds')
 
-        actor_agent.apply_gradients(actor_gradient, args.lr)  # 应用梯度
+        optimizer.step() # 应用梯度
+        # actor_agent.apply_gradients(actor_gradient, args.lr)
 
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')
 
         # 打印到tensorboard
+        if tensorboard_writer:
+            tensorboard_writer.add_scalar('actor_loss', action_loss, ep)
+            tensorboard_writer.add_scalar('entropy', entropy, ep)
+            tensorboard_writer.add_scalar('value_loss', value_loss, ep)
+            tensorboard_writer.add_scalar('episode_length', len(baselines), ep)
+            tensorboard_writer.add_scalar('average_reward_per_second', avg_per_step_reward * args.reward_scale, ep)
+            tensorboard_writer.add_scalar('sum_reward', cum_reward[0], ep)
+            tensorboard_writer.add_scalar('reset_probability', reset_prob, ep)
+            tensorboard_writer.add_scalar('num_jobs', num_finished_jobs, ep)
+            tensorboard_writer.add_scalar('reset_hit', reset_hit, ep)
+            tensorboard_writer.add_scalar('average_job_duration', avg_job_duration, ep)
+            tensorboard_writer.add_scalar('entropy_weight', entropy_weight, ep)
         # tf_logger.log(ep,
         #               [
         #                   action_loss,  # actor_loss
@@ -282,7 +305,7 @@ def main():
         reset_prob = utils.decrease_var(reset_prob, args.reset_prob_min, args.reset_prob_decay)
 
         if ep % args.model_save_interval == 0:
-            actor_agent.save_model(args.model_folder + 'model_ep_' + str(ep))
+            actor_agent.save_model(args.model_folder + 'model_ep_' + str(ep) + '.pth')
 
 
 if __name__ == '__main__':

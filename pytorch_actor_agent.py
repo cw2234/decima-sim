@@ -1,12 +1,11 @@
+import bisect
+
 import numpy as np
 import torch
 import torch.nn as nn
 from torch import Tensor
-import bisect
-
-from param import args
-import pytorch_op
 import pytorch_msg_passing_path
+import pytorch_op
 from pytorch_gcn import GraphCNN
 from pytorch_gsn import GraphSNN
 from spark_env.job_dag import JobDAG
@@ -178,7 +177,6 @@ class ActorAgent(nn.Module):
             self.node_input_dim + self.output_dim, self.hid_dims,
             self.output_dim, self.act_fn)
 
-
         # map gcn_outputs and raw_inputs to action probabilities
         # node_act_probs: [batch_size, total_num_nodes]
         # job_act_probs: [batch_size, total_num_dags]
@@ -187,7 +185,6 @@ class ActorAgent(nn.Module):
                                         self.output_dim,
                                         self.executor_levels,
                                         self.act_fn)
-
 
         #
         # # actor optimizer
@@ -238,8 +235,7 @@ class ActorAgent(nn.Module):
         )
 
         # prob on each job
-        prob_each_job = torch.sparse.mm(summ_mats[0], node_act_probs.reshape(-1, 1)).reshape(node_act_probs.shape[0],
-                                                                                             -1)
+        prob_each_job = torch.sparse.mm(summ_mats[0], node_act_probs.reshape(-1, 1)).reshape(node_act_probs.shape[0], -1)
 
         # job entropy
         job_entropy = torch.sum(
@@ -260,46 +256,23 @@ class ActorAgent(nn.Module):
         act_loss = adv_loss + entropy_weight * entropy_loss
         return act_loss, adv_loss, entropy_loss
 
-    def forward(self):
-        pass
+    def forward(self, node_inputs, job_inputs,
+                node_valid_mask, job_valid_mask,
+                gcn_mats, gcn_masks, summ_mats,
+                running_dags_mat, dag_summ_backward_map,
+                node_act_vec, job_act_vec, adv, entropy_weight):
+        node_act_probs, job_act_probs, node_acts, job_acts = self.predict(node_inputs, job_inputs, node_valid_mask,
+                                                                          job_valid_mask, gcn_mats, gcn_masks,
+                                                                          summ_mats, running_dags_mat,
+                                                                          dag_summ_backward_map)
 
-    def apply_gradients(self, gradients, lr_rate):
-        self.sess.run(self.apply_grads, feed_dict={
-            i: d for i, d in zip(
-                self.act_gradients + [self.lr_rate],
-                gradients + [lr_rate])
-        })
+        act_loss, adv_loss, entropy_loss = self.loss([summ_mats, running_dags_mat], node_act_probs, job_act_probs, node_act_vec, job_act_vec, adv, entropy_weight)
+        return act_loss, [adv_loss, entropy_loss]
+
 
     def save_model(self, file_path):
-        self.saver.save(self.sess, file_path)
+        torch.save(self.state_dict(), file_path)
 
-    def get_gradients(self, node_inputs, job_inputs,
-                      node_valid_mask, job_valid_mask,
-                      gcn_mats, gcn_masks, summ_mats,
-                      running_dags_mat, dag_summ_backward_map,
-                      node_act_vec, job_act_vec, adv, entropy_weight):
-
-        return self.sess.run([self.act_gradients, [self.adv_loss, self.entropy_loss]],  # 要计算的
-                             feed_dict=  # 所需的数据
-                             {
-                                 self.node_inputs: node_inputs,
-                                 self.job_inputs: job_inputs,
-                                 self.node_valid_mask: node_valid_mask,
-                                 self.job_valid_mask: job_valid_mask,
-
-                                 # GCN相关占位符和数据
-                                 **{placeholder: data for placeholder, data in zip(self.gcn_layer.adj_mats, gcn_mats)},
-                                 **{placeholder: data for placeholder, data in zip(self.gcn_layer.masks, gcn_masks)},
-                                 # GSN相关占位符和数据
-                                 **{placeholder: data for placeholder, data in
-                                    zip(self.gsn_layer.summ_mats, [summ_mats, running_dags_mat])},
-
-                                 self.dag_summ_backward_map: dag_summ_backward_map,
-                                 self.node_act_vec: node_act_vec,
-                                 self.job_act_vec: job_act_vec,
-                                 self.adv: adv,
-                                 self.entropy_weight: entropy_weight
-                             })
 
     def predict(self, node_inputs, job_inputs,
                 node_valid_mask, job_valid_mask,
@@ -461,13 +434,13 @@ class ActorAgent(nn.Module):
                 act = action_map.inverse_map[node]
                 node_valid_mask[0, act] = 1
 
-        return node_valid_mask, job_valid_mask
+        return torch.tensor(node_valid_mask, dtype=torch.float32), torch.tensor(job_valid_mask, dtype=torch.float32)
 
     def invoke_model(self, obs):
         # implement this module here for training
         # (to pick up state and action to record)
-        (node_inputs, # node input dimension: [total_num_nodes, num_features]
-         job_inputs, # job input dimension: [total_num_jobs, num_features]
+        (node_inputs,  # node input dimension: [total_num_nodes, num_features]
+         job_inputs,  # job input dimension: [total_num_jobs, num_features]
          job_dags,
          source_job,
          num_source_exec,
@@ -486,7 +459,6 @@ class ActorAgent(nn.Module):
          job_dags_changed) = self.postman.get_msg_path(job_dags)
 
         # get node and job valid masks\
-
 
         node_valid_mask, job_valid_mask = self.get_valid_masks(job_dags,
                                                                frontier_nodes,
@@ -569,7 +541,7 @@ class ActorAgent(nn.Module):
         assert node_valid_mask[0, node_act[0]] == 1
 
         # parse node action
-        node = action_map[node_act[0]]
+        node = action_map[node_act[0].item()]
 
         # find job index based on node
         job_idx = job_dags.index(node.job_dag)

@@ -168,8 +168,7 @@ def get_dag_summ_backward_map(job_dags):
     total_num_nodes = \
         int(np.sum([job_dag.num_nodes for job_dag in job_dags]))
 
-    dag_summ_backward_map = \
-        np.zeros([total_num_nodes, len(job_dags)])
+    dag_summ_backward_map = np.zeros([total_num_nodes, len(job_dags)])
 
     base = 0
     j_idx = 0
@@ -179,7 +178,7 @@ def get_dag_summ_backward_map(job_dags):
         base += job_dag.num_nodes
         j_idx += 1
 
-    return dag_summ_backward_map
+    return torch.tensor(dag_summ_backward_map, dtype=torch.float32)
 
 
 def get_running_dag_mat(job_dags):
@@ -204,7 +203,7 @@ def get_running_dag_mat(job_dags):
 
     running_dag_indices_torch = torch.tensor(running_dag_indices)
     running_dag_data_torch = torch.tensor(running_dag_data)
-    running_dag_mat = torch.sparse_coo_tensor(running_dag_indices_torch, running_dag_data_torch, running_dag_shape)
+    running_dag_mat = torch.sparse_coo_tensor(running_dag_indices_torch, running_dag_data_torch, running_dag_shape, dtype=torch.float32).coalesce()
 
 
     return running_dag_mat
@@ -238,7 +237,7 @@ def merge_masks(masks):
         if len(merged_mask) > 0:
             merged_mask = np.vstack(merged_mask)
 
-        merged_masks.append(merged_mask)
+        merged_masks.append(torch.tensor(merged_mask, dtype=torch.float32))
 
     return merged_masks
 
@@ -275,6 +274,6 @@ def get_unfinished_nodes_summ_mat(job_dags):
 
     summ_indices_torch = torch.tensor(summ_indices)
     summ_data_data_torch = torch.tensor(summ_data)
-    summerize_mat = torch.sparse_coo_tensor(summ_indices_torch, summ_data_data_torch, summ_shape)
+    summerize_mat = torch.sparse_coo_tensor(summ_indices_torch, summ_data_data_torch, summ_shape, dtype=torch.float32).coalesce()
 
     return summerize_mat

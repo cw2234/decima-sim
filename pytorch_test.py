@@ -1,14 +1,14 @@
+import torch
 import os
-import tensorflow.compat.v1 as tf
-tf.disable_eager_execution()
 import matplotlib
 matplotlib.use('agg')
 from spark_env.env import Environment
 from agent_for_test.spark_agent import SparkAgent
 from agent_for_test.heuristic_agent import DynamicPartitionAgent
-from actor_agent import ActorAgent
+from pytorch_actor_agent import ActorAgent
 from spark_env.canvas import *
 from param import args
+import utils
 
 
 # create result folder
@@ -16,7 +16,7 @@ if not os.path.exists(args.result_folder):
     os.makedirs(args.result_folder)
 
 # tensorflo seeding
-tf.set_random_seed(args.seed)
+torch.manual_seed(args.seed)
 
 # set up environment
 env = Environment()
@@ -26,11 +26,12 @@ agents = {}
 
 for scheme in args.test_schemes:
     if scheme == 'learn':
-        sess = tf.Session()
         agents[scheme] = ActorAgent(
-            sess, args.node_input_dim, args.job_input_dim,
+            args.node_input_dim, args.job_input_dim,
             args.hid_dims, args.output_dim, args.max_depth,
             range(1, args.exec_cap + 1))
+        if args.saved_model is not None:
+            agents[scheme].load_state_dict(torch.load(args.saved_model, weights_only=True))
     elif scheme == 'dynamic_partition':
         agents[scheme] = DynamicPartitionAgent()
     elif scheme == 'spark_fifo':
@@ -63,7 +64,8 @@ for exp in range(args.num_exp):
         done = False
 
         while not done:
-            node, use_exec = agent.get_action(obs)
+            with torch.no_grad():
+                node, use_exec = agent.get_action(obs)
             obs, reward, done = env.step(node, use_exec)
             total_reward += reward
 
