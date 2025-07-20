@@ -5,7 +5,7 @@ matplotlib.use('agg')
 from spark_env.env import Environment
 from agent_for_test.spark_agent import SparkAgent
 from agent_for_test.heuristic_agent import DynamicPartitionAgent
-from pytorch_actor_agent import ActorAgent
+from actor_agent import ActorAgent
 from spark_env.canvas import *
 from param import args
 import utils

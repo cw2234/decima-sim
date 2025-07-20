@@ -4,14 +4,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch import Tensor
-import pytorch_msg_passing_path
+import msg_passing_path
 import pytorch_op
-from pytorch_gcn import GraphCNN
-from pytorch_gsn import GraphSNN
+from gcn import GraphCNN
+from gsn import GraphSNN
 from spark_env.job_dag import JobDAG
 from spark_env.node import Node
 
-
+# 应该是policy network
 class ActorNetwork(nn.Module):
     def __init__(self,
                  node_input_dim: int,
@@ -26,6 +26,7 @@ class ActorNetwork(nn.Module):
         self.executor_levels = executor_levels
         self.act_fn = act_fn
 
+        # 在forward中将输入进行处理后的特征的长度，4层全连接
         reshape_node_dim = self.node_input_dim + 3 * self.output_dim
         self.fc_node = nn.Sequential(
             nn.Linear(reshape_node_dim, 32),
@@ -37,10 +38,7 @@ class ActorNetwork(nn.Module):
             nn.Linear(8, 1),
         )
 
-        # job_hid_0 = tl.fully_connected(expanded_state, 32, activation_fn=act_fn)
-        # job_hid_1 = tl.fully_connected(job_hid_0, 16, activation_fn=act_fn)
-        # job_hid_2 = tl.fully_connected(job_hid_1, 8, activation_fn=act_fn)
-        # job_outputs = tl.fully_connected(job_hid_2, 1, activation_fn=None)
+        # 在forward中将输入进行处理后的特征的长度，4层全连接
         expand_state_dim = self.job_input_dim + 2 * self.output_dim + 1
         self.fc_job = nn.Sequential(
             nn.Linear(expand_state_dim, 32),
@@ -61,6 +59,7 @@ class ActorNetwork(nn.Module):
                 node_valid_mask: Tensor,
                 job_valid_mask: Tensor,
                 gsn_summ_backward_map: Tensor):
+        # 返回选各个node，选哪个处理器的可能性
         # takes output from graph embedding and raw_input from environment
 
         batch_size = node_valid_mask.shape[0]
@@ -164,15 +163,14 @@ class ActorAgent(nn.Module):
         self.act_fn = act_fn
 
         # for computing and storing message passing path
-        self.postman = pytorch_msg_passing_path.Postman()
+        self.postman = msg_passing_path.Postman()
 
-        # input node_inputs
+        # input node_inputs，图神经网络层
         self.gcn_layer = GraphCNN(
             self.node_input_dim, self.hid_dims,
             self.output_dim, self.max_depth, self.act_fn)
-        # gcn_outputs = self.gcn_layer(self.node_inputs)  # 网络输出
 
-        # input [node_input, gcn_outputs, axis=1]
+        # input [node_input, gcn_outputs, axis=1]，图神经网络层
         self.gsn_layer = GraphSNN(
             self.node_input_dim + self.output_dim, self.hid_dims,
             self.output_dim, self.act_fn)
@@ -180,26 +178,14 @@ class ActorAgent(nn.Module):
         # map gcn_outputs and raw_inputs to action probabilities
         # node_act_probs: [batch_size, total_num_nodes]
         # job_act_probs: [batch_size, total_num_dags]
+        # 策略层
         self.actor_layer = ActorNetwork(self.node_input_dim,
                                         self.job_input_dim,
                                         self.output_dim,
                                         self.executor_levels,
                                         self.act_fn)
 
-        #
-        # # actor optimizer
-        # self.act_opt = self.optimizer(self.lr_rate).minimize(self.act_loss)
-        #
-        # # apply gradient directly to update parameters
-        # self.apply_grads = self.optimizer(self.lr_rate).apply_gradients(zip(self.act_gradients, training_parameters))
-
-        # # network paramter saver
-        # self.saver = tf.train.Saver(max_to_keep=args.num_saved_models)
-        # self.sess.run(tf.global_variables_initializer())
-
-        # if args.saved_model is not None:
-        #     self.saver.restore(self.sess, args.saved_model)
-
+    # 计算损失函数
     def loss(self, summ_mats, node_act_probs, job_act_probs, node_act_vec, job_act_vec, adv, entropy_weight):
         '''
 
@@ -256,6 +242,7 @@ class ActorAgent(nn.Module):
         act_loss = adv_loss + entropy_weight * entropy_loss
         return act_loss, adv_loss, entropy_loss
 
+    # 这个用来算梯度的
     def forward(self, node_inputs, job_inputs,
                 node_valid_mask, job_valid_mask,
                 gcn_mats, gcn_masks, summ_mats,
@@ -267,6 +254,7 @@ class ActorAgent(nn.Module):
                                                                           dag_summ_backward_map)
 
         act_loss, adv_loss, entropy_loss = self.loss([summ_mats, running_dags_mat], node_act_probs, job_act_probs, node_act_vec, job_act_vec, adv, entropy_weight)
+        # 用act_loss.backward()来累积梯度
         return act_loss, [adv_loss, entropy_loss]
 
 
@@ -311,6 +299,7 @@ class ActorAgent(nn.Module):
     def translate_state(self, obs):
         """
         Translate the observation to matrix form
+        将一些量转成Tensor
         """
         (job_dags,
          source_job,
@@ -468,7 +457,7 @@ class ActorAgent(nn.Module):
                                                                action_map)
 
         # get summarization path that ignores finished nodes
-        summ_mats = pytorch_msg_passing_path.get_unfinished_nodes_summ_mat(job_dags)
+        summ_mats = msg_passing_path.get_unfinished_nodes_summ_mat(job_dags)
 
         # invoke learning model
         (node_act_probs,

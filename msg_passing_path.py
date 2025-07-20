@@ -8,7 +8,7 @@ node points at each iteration)
 import numpy as np
 import torch
 from utils import OrderedSet
-import pytorch_sparse_op
+import sparse_op
 from param import args
 
 
@@ -24,7 +24,7 @@ class Postman(object):
         if len(self.job_dags) != len(job_dags):
             job_dags_changed = True
         else:
-            job_dags_changed = not(all(i is j for \
+            job_dags_changed = not(all(i is j for
                 (i, j) in zip(self.job_dags, job_dags)))
 
         if job_dags_changed:
@@ -58,7 +58,7 @@ def get_msg_path(job_dags):
         msg_masks.append(msg_mask)
 
     if len(job_dags) > 0:
-        msg_mats = pytorch_sparse_op.absorb_sp_mats(
+        msg_mats = sparse_op.absorb_sp_mats(
             msg_mats, args.max_depth)
         msg_masks = merge_masks(msg_masks)
 
@@ -132,7 +132,7 @@ def get_bottom_up_paths(job_dag):
             break  # some graph is shallow
 
         # assign parent-child path in current iteration
-        sp_mat = pytorch_sparse_op.SparseMat(dtype=np.float32, shape=(num_nodes, num_nodes))
+        sp_mat = sparse_op.SparseMat(dtype=np.float32, shape=(num_nodes, num_nodes))
         for n in new_frontier:
             for child in n.child_nodes:
                 sp_mat.add(row=n.idx, col=child.idx, data=1)
@@ -157,7 +157,7 @@ def get_bottom_up_paths(job_dag):
 
     # deliberately make dimension the same, for batch processing
     for _ in range(depth, args.max_depth):
-        msg_mats.append(pytorch_sparse_op.SparseMat(dtype=np.float32,
+        msg_mats.append(sparse_op.SparseMat(dtype=np.float32,
             shape=(num_nodes, num_nodes)))
 
     return msg_mats, msg_masks

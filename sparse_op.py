@@ -80,7 +80,6 @@ def absorb_sp_mats(in_mats, depth):
         col_idx = np.hstack(col_idx)
         data = np.hstack(data)
 
-        # indices = np.asmatrix([row_idx, col_idx]).transpose()
         indices = np.asmatrix([row_idx, col_idx])
         indices_torch = torch.tensor(indices)
         data_torch = torch.tensor(data)

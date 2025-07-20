@@ -1,9 +1,5 @@
 import os
-
-from torch import no_grad
-
 # os.environ['CUDA_VISIBLE_DEVICES']=''
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import time
 import torch
 import numpy as np
@@ -12,9 +8,9 @@ from param import args
 import utils
 from spark_env.env import Environment
 from average_reward import AveragePerStepReward
-import pytorch_compute_baselines
-import pytorch_compute_gradients
-from pytorch_actor_agent import ActorAgent
+import compute_baselines
+import compute_gradients
+from actor_agent import ActorAgent
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -105,6 +101,9 @@ def invoke_model(actor_agent: ActorAgent, obs, experience):
 
 
 def main():
+    device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
+    print(f"Using device: {device}")
+
     np.random.seed(args.seed)
 
     torch.manual_seed(args.seed)
@@ -130,7 +129,7 @@ def main():
     optimizer = torch.optim.Adam(actor_agent.parameters(), lr=args.lr)
 
     # tensorboard logging
-    log_dir = os.path.join(args.result_folder, args.model_folder, strftime("%Y-%m-%d-%H-%M-%S", localtime()))
+    log_dir = os.path.join(args.result_folder, strftime("%Y-%m-%d-%H-%M-%S", localtime()))
     print(log_dir)
     tensorboard_writer = SummaryWriter(log_dir)
 
@@ -237,7 +236,7 @@ def main():
         cum_reward = utils.discount(rewards, args.gamma)
 
         # compute baseline，返回的是list，但现在只有一个agent
-        baselines = pytorch_compute_baselines.get_piecewise_linear_fit_baseline([cum_reward], [batch_time[1:]])
+        baselines = compute_baselines.get_piecewise_linear_fit_baseline([cum_reward], [batch_time[1:]])
 
         # 变成一项
         baselines = baselines[0]  # 一个agent的baseline
@@ -250,7 +249,7 @@ def main():
         optimizer.zero_grad() # 清除梯度
 
         # 累积梯度
-        loss = pytorch_compute_gradients.compute_actor_gradients(actor_agent, experience, batch_adv,
+        loss = compute_gradients.compute_actor_gradients(actor_agent, experience, batch_adv,
                                                                          entropy_weight)
 
         t3 = time.time()
@@ -265,7 +264,6 @@ def main():
         print('worker send back gradients', t4 - t3, 'seconds')
 
         optimizer.step() # 应用梯度
-        # actor_agent.apply_gradients(actor_gradient, args.lr)
 
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')
@@ -283,20 +281,6 @@ def main():
             tensorboard_writer.add_scalar('reset_hit', reset_hit, ep)
             tensorboard_writer.add_scalar('average_job_duration', avg_job_duration, ep)
             tensorboard_writer.add_scalar('entropy_weight', entropy_weight, ep)
-        # tf_logger.log(ep,
-        #               [
-        #                   action_loss,  # actor_loss
-        #                   entropy,  # entropy
-        #                   value_loss,  # value_loss
-        #                   len(baselines),  # episode_length
-        #                   avg_per_step_reward * args.reward_scale,  # average_reward_per_second
-        #                   cum_reward[0],  # sum_reward
-        #                   reset_prob,  # reset_probability
-        #                   num_finished_jobs,  # num_jobs
-        #                   reset_hit,  # reset_hit
-        #                   avg_job_duration,  # average_job_duration
-        #                   entropy_weight  # entropy_weight
-        #               ])
 
         # decrease entropy weight
         entropy_weight = utils.decrease_var(entropy_weight, args.entropy_weight_min, args.entropy_weight_decay)

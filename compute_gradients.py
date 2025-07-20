@@ -1,8 +1,8 @@
 import numpy as np
 import utils
 import torch
-from pytorch_actor_agent import ActorAgent
-from pytorch_sparse_op import expand_sp_mat, merge_and_extend_sp_mat
+from actor_agent import ActorAgent
+from sparse_op import expand_sp_mat, merge_and_extend_sp_mat
 
 
 def compute_actor_gradients(actor_agent: ActorAgent, exp, batch_adv, entropy_weight):
