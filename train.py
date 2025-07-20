@@ -4,7 +4,7 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import time
 import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
+tf.compat.v1.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
 import numpy as np
 
 from param import args
@@ -103,7 +103,6 @@ def invoke_model(actor_agent: ActorAgent, obs, experience):
 
 
 def main():
-    print(type(range(1, args.exec_cap + 1)))
     np.random.seed(args.seed)
     tf.set_random_seed(args.seed)
 

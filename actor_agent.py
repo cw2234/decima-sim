@@ -1,7 +1,6 @@
 import numpy as np
 import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
-from tensorflow.python.framework.ops import Tensor
+tf.compat.v1.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
 import bisect
 
 from param import args
@@ -25,7 +24,7 @@ class ActorAgent(Agent):
                  executor_levels: range,
                  eps=1e-6,
                  act_fn=tf_op.leaky_relu,
-                 optimizer=tf.train.AdamOptimizer,
+                 optimizer=tf.compat.v1.train.AdamOptimizer,
                  scope='actor_agent'):
 
         Agent.__init__(self)
@@ -45,10 +44,10 @@ class ActorAgent(Agent):
         self.postman = msg_passing_path.Postman()
 
         # node input dimension: [total_num_nodes, num_features]
-        self.node_inputs: Tensor = tf.placeholder(tf.float32, [None, self.node_input_dim])
+        self.node_inputs= tf.placeholder(tf.float32, [None, self.node_input_dim])
 
         # job input dimension: [total_num_jobs, num_features]
-        self.job_inputs: Tensor = tf.placeholder(tf.float32, [None, self.job_input_dim])
+        self.job_inputs = tf.placeholder(tf.float32, [None, self.job_input_dim])
 
         self.gcn = GraphCNN(
             self.node_inputs, self.node_input_dim, self.hid_dims,
@@ -102,12 +101,12 @@ class ActorAgent(Agent):
         # select node action probability
         self.selected_node_prob = tf.reduce_sum(tf.multiply(
             self.node_act_probs, self.node_act_vec),
-            reduction_indices=1, keep_dims=True)
+            reduction_indices=1, keepdims=True)
 
         # select job action probability
         self.selected_job_prob = tf.reduce_sum(tf.reduce_sum(tf.multiply(
             self.job_act_probs, self.job_act_vec),
-            reduction_indices=2), reduction_indices=1, keep_dims=True)
+            reduction_indices=2), reduction_indices=1, keepdims=True)
 
         # actor loss due to advantge (negated)
         self.adv_loss = tf.reduce_sum(tf.multiply(
@@ -245,7 +244,7 @@ class ActorAgent(Agent):
         node_outputs = node_outputs + node_valid_mask
 
         # do masked softmax over nodes on the graph
-        node_outputs = tf.nn.softmax(node_outputs, dim=-1)
+        node_outputs = tf.nn.softmax(node_outputs, axis=-1)
 
         # -- part B, the distribution over executor limits --
         merge_job = tf.concat([
@@ -292,11 +291,10 @@ class ActorAgent(Agent):
 
         # reshape output dimension for softmaxing the executor limits
         # (batch_size, num_jobs, num_exec_limits)
-        job_outputs = tf.reshape(
-            job_outputs, [batch_size, -1, len(self.executor_levels)])
+        job_outputs = tf.reshape(job_outputs, [batch_size, -1, len(self.executor_levels)])
 
         # do masked softmax over jobs
-        job_outputs = tf.nn.softmax(job_outputs, dim=-1)
+        job_outputs = tf.nn.softmax(job_outputs, axis=-1)
 
         return node_outputs, job_outputs
 

@@ -7,7 +7,7 @@ node points at each iteration)
 
 import numpy as np
 import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
+tf.compat.v1.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
 from utils import OrderedSet
 import sparse_op
 from param import args
@@ -200,7 +200,7 @@ def get_running_dag_mat(job_dags):
 
         j_idx += 1
 
-    running_dag_indices = np.mat(
+    running_dag_indices = np.asmatrix(
         [running_dag_row_idx, running_dag_col_idx]).transpose()
     running_dag_mat = tf.SparseTensorValue(
         running_dag_indices, running_dag_data, running_dag_shape)
@@ -267,7 +267,7 @@ def get_unfinished_nodes_summ_mat(job_dags):
         base += job_dag.num_nodes
         j_idx += 1
 
-    summ_indices = np.mat([summ_row_idx, summ_col_idx]).transpose()
+    summ_indices = np.asmatrix([summ_row_idx, summ_col_idx]).transpose()
     summerize_mat = tf.SparseTensorValue(
         summ_indices, summ_data, summ_shape)
 

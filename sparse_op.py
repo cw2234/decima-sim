@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
+tf.compat.v1.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
 
 
 class SparseMat(object):
@@ -80,7 +80,7 @@ def absorb_sp_mats(in_mats, depth):
         col_idx = np.hstack(col_idx)
         data = np.hstack(data)
 
-        indices = np.mat([row_idx, col_idx]).transpose()
+        indices = np.asmatrix([row_idx, col_idx]).transpose()
         sp_mats.append(tf.SparseTensorValue(
             indices, data, (shape, shape)))
 
@@ -137,7 +137,7 @@ def expand_sp_mat(sp, exp_step):
         col_idx = np.hstack(col_idx)
         data = np.hstack(data)
 
-        indices = np.mat([row_idx, col_idx]).transpose()
+        indices = np.asmatrix([row_idx, col_idx]).transpose()
         extended_mat.append(tf.SparseTensorValue(
             indices, data, (shape, shape)))
 
@@ -186,7 +186,7 @@ def merge_and_extend_sp_mat(sp):
     col_idx = np.hstack(col_idx)
     data = np.hstack(data)
 
-    indices = np.mat([row_idx, col_idx]).transpose()
+    indices = np.asmatrix([row_idx, col_idx]).transpose()
     extended_mat = tf.SparseTensorValue(indices, data, shape)
 
     return extended_mat
