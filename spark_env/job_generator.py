@@ -1,16 +1,19 @@
-import os
-
-
 import numpy as np
 import utils
 from param import args
 from spark_env.task import Task
 from spark_env.node import Node
 from spark_env.job_dag import JobDAG
+from spark_env.wall_time import WallTime
+from spark_env.timeline import Timeline
 
 
 
-def load_job(file_path, query_size, query_idx, wall_time, np_random):
+def load_job(file_path: str,
+             query_size: str,
+             query_idx: str,
+             wall_time: WallTime,
+             np_random: np.random.RandomState):
     query_path = file_path + query_size + '/'
 
     adj_mat = np.load(query_path + 'adj_mat_' + str(query_idx) + '.npy', allow_pickle=True)
@@ -80,7 +83,7 @@ def pre_process_task_duration(task_duration):
                 # prevent duplicated fresh duration blocking first wave
                 fresh_durations.remove(d)
 
-    # fill in nearest neighour first wave
+    # fill in nearest neighbour first wave
     last_first_wave = []
     for e in sorted(clean_first_wave.keys()):
         if len(clean_first_wave[e]) == 0:
@@ -105,7 +108,9 @@ def recursive_find_descendant(node):
 
 
 # 创tpch任务
-def generate_jobs(np_random, timeline, wall_time):
+def generate_jobs(np_random: np.random.RandomState,
+                  timeline: Timeline,
+                  wall_time: WallTime):
     job_dags = utils.OrderedSet()
     t = 0
 
@@ -127,8 +132,7 @@ def generate_jobs(np_random, timeline, wall_time):
         query_size = args.tpch_size[np_random.randint(len(args.tpch_size))]
         query_idx = str(np_random.randint(args.tpch_num) + 1)
         # generate job
-        job_dag = load_job(
-            args.job_folder, query_size, query_idx, wall_time, np_random)
+        job_dag = load_job(args.job_folder, query_size, query_idx, wall_time, np_random)
         # push into timeline
         job_dag.start_time = t
         timeline.push(t, job_dag)
