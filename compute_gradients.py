@@ -1,7 +1,7 @@
 import numpy as np
 import utils
 
-from sparse_op import expand_sp_mat, merge_and_extend_sp_mat
+from pytorch_sparse_op import expand_sp_mat, merge_and_extend_sp_mat
 
 
 def compute_actor_gradients(actor_agent, exp, batch_adv, entropy_weight):

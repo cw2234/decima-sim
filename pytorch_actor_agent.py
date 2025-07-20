@@ -5,11 +5,10 @@ from torch import Tensor
 import bisect
 
 from param import args
-import tf_op
-import msg_passing_path
+import pytorch_op
+import pytorch_msg_passing_path
 from pytorch_gcn import GraphCNN
 from pytorch_gsn import GraphSNN
-from agent import Agent
 from spark_env.job_dag import JobDAG
 from spark_env.node import Node
 
@@ -119,7 +118,7 @@ class ActorNetwork(nn.Module):
             gsn_dag_summ_reshape,
             gsn_global_summ_extend_job], dim=2)
 
-        expanded_state = tf_op.expand_act_on_state(
+        expanded_state = pytorch_op.expand_act_on_state(
             merge_job, [l / 50.0 for l in self.executor_levels])
 
         # 经过全连接
@@ -153,8 +152,7 @@ class ActorAgent(nn.Module):
                  max_depth: int,
                  executor_levels: range,
                  eps=1e-6,
-                 act_fn=nn.LeakyReLU(),
-                 optimizer=tf.compat.v1.train.AdamOptimizer, ):
+                 act_fn=nn.LeakyReLU()):
 
         super(ActorAgent, self).__init__()
         self.node_input_dim = node_input_dim
@@ -165,16 +163,9 @@ class ActorAgent(nn.Module):
         self.executor_levels = executor_levels
         self.eps = eps
         self.act_fn = act_fn
-        self.optimizer = optimizer
 
         # for computing and storing message passing path
-        self.postman = msg_passing_path.Postman()
-
-        # node input dimension: [total_num_nodes, num_features]
-        self.node_inputs = tf.placeholder(tf.float32, [None, self.node_input_dim])
-
-        # job input dimension: [total_num_jobs, num_features]
-        self.job_inputs = tf.placeholder(tf.float32, [None, self.job_input_dim])
+        self.postman = pytorch_msg_passing_path.Postman()
 
         # input node_inputs
         self.gcn_layer = GraphCNN(
@@ -187,14 +178,6 @@ class ActorAgent(nn.Module):
             self.node_input_dim + self.output_dim, self.hid_dims,
             self.output_dim, self.act_fn)
 
-        # valid mask for node action ([batch_size, total_num_nodes])
-        self.node_valid_mask = tf.placeholder(tf.float32, [None, None])
-
-        # valid mask for executor limit on jobs ([batch_size, num_jobs * num_exec_limits])
-        self.job_valid_mask = tf.placeholder(tf.float32, [None, None])
-
-        # map back the dag summeraization to each node ([total_num_nodes, num_dags])
-        self.dag_summ_backward_map = tf.placeholder(tf.float32, [None, None])
 
         # map gcn_outputs and raw_inputs to action probabilities
         # node_act_probs: [batch_size, total_num_nodes]
@@ -205,87 +188,77 @@ class ActorAgent(nn.Module):
                                         self.executor_levels,
                                         self.act_fn)
 
-        # self.node_act_probs, self.job_act_probs = self.actor_network(
-        #     self.node_inputs, gcn_outputs, self.job_inputs,
-        #     self.gsn_layer.summaries[0], self.gsn_layer.summaries[1],
-        #     self.node_valid_mask, self.job_valid_mask,
-        #     self.dag_summ_backward_map, self.act_fn)
 
+        #
+        # # actor optimizer
+        # self.act_opt = self.optimizer(self.lr_rate).minimize(self.act_loss)
+        #
+        # # apply gradient directly to update parameters
+        # self.apply_grads = self.optimizer(self.lr_rate).apply_gradients(zip(self.act_gradients, training_parameters))
 
-        # Selected action for node, 0-1 vector ([batch_size, total_num_nodes])
-        self.node_act_vec = tf.placeholder(tf.float32, [None, None])
-        # Selected action for job, 0-1 vector ([batch_size, num_jobs, num_limits])
-        self.job_act_vec = tf.placeholder(tf.float32, [None, None, None])
+        # # network paramter saver
+        # self.saver = tf.train.Saver(max_to_keep=args.num_saved_models)
+        # self.sess.run(tf.global_variables_initializer())
 
-        # advantage term (from Monte Calro or critic) ([batch_size, 1])
-        self.adv = tf.placeholder(tf.float32, [None, 1])
+        # if args.saved_model is not None:
+        #     self.saver.restore(self.sess, args.saved_model)
 
-        # use entropy to promote exploration, this term decays over time
-        self.entropy_weight = tf.placeholder(tf.float32, ())
+    def loss(self, summ_mats, node_act_probs, job_act_probs, node_act_vec, job_act_vec, adv, entropy_weight):
+        '''
+
+        Args:
+            node_act_probs:
+            job_act_probs:
+            node_act_vec: Selected action for node, 0-1 vector ([batch_size, total_num_nodes])
+            job_act_vec: Selected action for job, 0-1 vector ([batch_size, num_jobs, num_limits])
+            adv: advantage term (from Monte Calro or critic) ([batch_size, 1])
+            entropy_weight: use entropy to promote exploration, this term decays over time, float
+
+        Returns:
+
+        '''
 
         # select node action probability
-        self.selected_node_prob = tf.reduce_sum(tf.multiply(
-            self.node_act_probs, self.node_act_vec),
-            reduction_indices=1, keepdims=True)
+        selected_node_prob = torch.sum(node_act_probs * node_act_vec, dim=1, keepdim=True)
 
         # select job action probability
-        self.selected_job_prob = tf.reduce_sum(tf.reduce_sum(tf.multiply(
-            self.job_act_probs, self.job_act_vec),
-            reduction_indices=2), reduction_indices=1, keepdims=True)
+        selected_job_prob = torch.sum(
+            torch.sum(job_act_probs * job_act_vec, dim=2, keepdim=False),
+            dim=1, keepdim=True
+        )
 
         # actor loss due to advantge (negated)
-        self.adv_loss = tf.reduce_sum(tf.multiply(
-            tf.log(self.selected_node_prob * self.selected_job_prob + self.eps), -self.adv))
+        adv_loss = torch.sum(
+            torch.log(selected_node_prob * selected_job_prob + self.eps) * (-adv)
+        )
 
         # node_entropy
-        self.node_entropy = tf.reduce_sum(tf.multiply(
-            self.node_act_probs, tf.log(self.node_act_probs + self.eps)))
+        node_entropy = torch.sum(
+            node_act_probs * torch.log(node_act_probs + self.eps)
+        )
 
         # prob on each job
-        self.prob_each_job = tf.reshape(
-            tf.sparse_tensor_dense_matmul(self.gsn_layer.summ_mats[0],
-                                          tf.reshape(self.node_act_probs, [-1, 1])),
-            [tf.shape(self.node_act_probs)[0], -1])
+        prob_each_job = torch.sparse.mm(summ_mats[0], node_act_probs.reshape(-1, 1)).reshape(node_act_probs.shape[0],
+                                                                                             -1)
 
         # job entropy
-        self.job_entropy = tf.reduce_sum(tf.multiply(self.prob_each_job,
-                                                     tf.reduce_sum(tf.multiply(self.job_act_probs,
-                                                                               tf.log(self.job_act_probs + self.eps)),
-                                                                   reduction_indices=2)))
+        job_entropy = torch.sum(
+            prob_each_job * torch.sum(job_act_probs * torch.log(job_act_probs + self.eps), dim=2)
+        )
 
         # entropy loss
-        self.entropy_loss = self.node_entropy + self.job_entropy
+        entropy_loss = node_entropy + job_entropy
 
         # normalize entropy
-        self.entropy_loss /= (tf.log(tf.cast(tf.shape(self.node_act_probs)[1], tf.float32)) +
-                              tf.log(float(len(self.executor_levels))))
+        entropy_loss /= (
+                torch.log(torch.tensor(node_act_probs.shape[1], dtype=torch.float32)) +
+                torch.log(torch.tensor(len(self.executor_levels), dtype=torch.float32)))
         # normalize over batch size (note: adv_loss is sum)
         # * tf.cast(tf.shape(self.node_act_probs)[0], tf.float32)
 
         # define combined loss
-        self.act_loss = self.adv_loss + self.entropy_weight * self.entropy_loss
-
-        # get training parameters
-        training_parameters = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
-
-        # actor gradients
-        self.act_gradients = tf.gradients(self.act_loss, training_parameters)
-
-        # adaptive learning rate
-        self.lr_rate = tf.placeholder(tf.float32, shape=[])
-
-        # actor optimizer
-        self.act_opt = self.optimizer(self.lr_rate).minimize(self.act_loss)
-
-        # apply gradient directly to update parameters
-        self.apply_grads = self.optimizer(self.lr_rate).apply_gradients(zip(self.act_gradients, training_parameters))
-
-        # network paramter saver
-        self.saver = tf.train.Saver(max_to_keep=args.num_saved_models)
-        self.sess.run(tf.global_variables_initializer())
-
-        if args.saved_model is not None:
-            self.saver.restore(self.sess, args.saved_model)
+        act_loss = adv_loss + entropy_weight * entropy_loss
+        return act_loss, adv_loss, entropy_loss
 
     def forward(self):
         pass
@@ -333,17 +306,15 @@ class ActorAgent(nn.Module):
                 gcn_mats, gcn_masks, summ_mats,
                 running_dags_mat, dag_summ_backward_map):
 
-        gcn_outputs = self.gcn_layer(node_inputs, gcn_mats, gcn_mats)  # 网络输出
+        gcn_outputs = self.gcn_layer(node_inputs, gcn_mats, gcn_masks)  # 网络输出
         summarys = self.gsn_layer(torch.concat([node_inputs, gcn_outputs], dim=1), [summ_mats, running_dags_mat])
-
-
 
         node_act_probs, job_act_probs = self.actor_layer(
             node_inputs,
             gcn_outputs,
             job_inputs,
-            summarys[0], # dag
-            summarys[1], # global
+            summarys[0],  # dag
+            summarys[1],  # global
             node_valid_mask,
             job_valid_mask,
             dag_summ_backward_map
@@ -362,9 +333,7 @@ class ActorAgent(nn.Module):
         noise = torch.rand_like(logits)
         job_acts = torch.argmax(logits - torch.log(-torch.log(noise)), 2)
 
-
         return node_act_probs, job_act_probs, node_acts, job_acts
-
 
     def translate_state(self, obs):
         """
@@ -441,7 +410,7 @@ class ActorAgent(nn.Module):
 
             job_idx += 1
 
-        return (node_inputs, job_inputs,
+        return (torch.tensor(node_inputs, dtype=torch.float32), torch.tensor(job_inputs, dtype=torch.float32),
                 job_dags, source_job, num_source_exec,
                 frontier_nodes, executor_limits,
                 exec_commit, moving_executors,
@@ -497,8 +466,8 @@ class ActorAgent(nn.Module):
     def invoke_model(self, obs):
         # implement this module here for training
         # (to pick up state and action to record)
-        (node_inputs,
-         job_inputs,
+        (node_inputs, # node input dimension: [total_num_nodes, num_features]
+         job_inputs, # job input dimension: [total_num_jobs, num_features]
          job_dags,
          source_job,
          num_source_exec,
@@ -516,7 +485,9 @@ class ActorAgent(nn.Module):
          running_dags_mat,
          job_dags_changed) = self.postman.get_msg_path(job_dags)
 
-        # get node and job valid masks
+        # get node and job valid masks\
+
+
         node_valid_mask, job_valid_mask = self.get_valid_masks(job_dags,
                                                                frontier_nodes,
                                                                source_job,
@@ -525,7 +496,7 @@ class ActorAgent(nn.Module):
                                                                action_map)
 
         # get summarization path that ignores finished nodes
-        summ_mats = msg_passing_path.get_unfinished_nodes_summ_mat(job_dags)
+        summ_mats = pytorch_msg_passing_path.get_unfinished_nodes_summ_mat(job_dags)
 
         # invoke learning model
         (node_act_probs,

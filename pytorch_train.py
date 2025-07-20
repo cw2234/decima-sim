@@ -3,7 +3,7 @@ import os
 # os.environ['CUDA_VISIBLE_DEVICES']=''
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import time
-import tensorflow as tf
+import torch
 import numpy as np
 
 from param import args
@@ -12,8 +12,8 @@ from spark_env.env import Environment
 from average_reward import AveragePerStepReward
 import compute_baselines
 import compute_gradients
-from actor_agent import ActorAgent
-from tf_logger import TFLogger
+from pytorch_actor_agent import ActorAgent
+# from tf_logger import TFLogger
 
 
 def invoke_model(actor_agent: ActorAgent, obs, experience):
@@ -103,29 +103,32 @@ def invoke_model(actor_agent: ActorAgent, obs, experience):
 
 def main():
     np.random.seed(args.seed)
-    tf.set_random_seed(args.seed)
+
+    torch.manual_seed(args.seed)
 
     # create result and model folder
     utils.create_folder_if_not_exists(args.result_folder)
     utils.create_folder_if_not_exists(args.model_folder)
 
     # model evaluation seed
-    tf.set_random_seed(0)
+    torch.manual_seed(0)
 
     # 创建环境
     env = Environment()
-    config = tf.ConfigProto(device_count={'GPU': args.worker_num_gpu},
-                                   gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=args.worker_gpu_fraction))
-    sess = tf.Session(config=config)
-    actor_agent = ActorAgent(sess, args.node_input_dim, args.job_input_dim, args.hid_dims,
-                                    args.output_dim,
-                                    args.max_depth, range(1, args.exec_cap + 1))
+
+    actor_agent = ActorAgent(
+        args.node_input_dim,
+        args.job_input_dim,
+        args.hid_dims,
+        args.output_dim,
+        args.max_depth,
+        range(1, args.exec_cap + 1))
 
     # tensorboard logging
-    tf_logger = TFLogger(sess,
-                         ['actor_loss', 'entropy', 'value_loss', 'episode_length', 'average_reward_per_second',
-                          'sum_reward', 'reset_probability', 'num_jobs', 'reset_hit', 'average_job_duration',
-                          'entropy_weight'])
+    # tf_logger = TFLogger(sess,
+    #                      ['actor_loss', 'entropy', 'value_loss', 'episode_length', 'average_reward_per_second',
+    #                       'sum_reward', 'reset_probability', 'num_jobs', 'reset_hit', 'average_job_duration',
+    #                       'entropy_weight'])
 
     # store average reward for computing differential rewards
     avg_reward_calculator = AveragePerStepReward(args.average_reward_storage_size)
@@ -248,30 +251,29 @@ def main():
         entropy = -loss[1] / float(cum_reward.shape[0])
         value_loss = loss[2]
 
-
         t4 = time.time()
         print('worker send back gradients', t4 - t3, 'seconds')
 
-        actor_agent.apply_gradients(actor_gradient, args.lr) # 应用梯度
+        actor_agent.apply_gradients(actor_gradient, args.lr)  # 应用梯度
 
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')
 
         # 打印到tensorboard
-        tf_logger.log(ep,
-                      [
-                          action_loss,  # actor_loss
-                          entropy,  # entropy
-                          value_loss,  # value_loss
-                          len(baselines),  # episode_length
-                          avg_per_step_reward * args.reward_scale,  # average_reward_per_second
-                          cum_reward[0],  # sum_reward
-                          reset_prob,  # reset_probability
-                          num_finished_jobs,  # num_jobs
-                          reset_hit,  # reset_hit
-                          avg_job_duration,  # average_job_duration
-                          entropy_weight  # entropy_weight
-                      ])
+        # tf_logger.log(ep,
+        #               [
+        #                   action_loss,  # actor_loss
+        #                   entropy,  # entropy
+        #                   value_loss,  # value_loss
+        #                   len(baselines),  # episode_length
+        #                   avg_per_step_reward * args.reward_scale,  # average_reward_per_second
+        #                   cum_reward[0],  # sum_reward
+        #                   reset_prob,  # reset_probability
+        #                   num_finished_jobs,  # num_jobs
+        #                   reset_hit,  # reset_hit
+        #                   avg_job_duration,  # average_job_duration
+        #                   entropy_weight  # entropy_weight
+        #               ])
 
         # decrease entropy weight
         entropy_weight = utils.decrease_var(entropy_weight, args.entropy_weight_min, args.entropy_weight_decay)
@@ -281,8 +283,6 @@ def main():
 
         if ep % args.model_save_interval == 0:
             actor_agent.save_model(args.model_folder + 'model_ep_' + str(ep))
-
-    sess.close()
 
 
 if __name__ == '__main__':
