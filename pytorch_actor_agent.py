@@ -1,25 +1,162 @@
 import numpy as np
-import tensorflow as tf
-import tensorflow.contrib.layers as tl
+import torch
+import torch.nn as nn
+from torch import Tensor
 import bisect
+
 from param import args
 import tf_op
 import msg_passing_path
-from gcn import GraphCNN
-from gsn import GraphSNN
+from pytorch_gcn import GraphCNN
+from pytorch_gsn import GraphSNN
 from agent import Agent
 from spark_env.job_dag import JobDAG
 from spark_env.node import Node
 
 
-class ActorAgent(Agent):
-    def __init__(self, sess, node_input_dim, job_input_dim, hid_dims, output_dim,
-                 max_depth, executor_levels, eps=1e-6, act_fn=tf_op.leaky_relu,
-                 optimizer=tf.train.AdamOptimizer, scope='actor_agent'):
+class ActorNetwork(nn.Module):
+    def __init__(self,
+                 node_input_dim: int,
+                 job_input_dim: int,
+                 output_dim: int,
+                 executor_levels: range,
+                 act_fn: nn.Module):
+        super(ActorNetwork, self).__init__()
+        self.node_input_dim = node_input_dim
+        self.job_input_dim = job_input_dim
+        self.output_dim = output_dim
+        self.executor_levels = executor_levels
+        self.act_fn = act_fn
 
-        Agent.__init__(self)
+        reshape_node_dim = self.node_input_dim + 3 * self.output_dim
+        self.fc_node = nn.Sequential(
+            nn.Linear(reshape_node_dim, 32),
+            self.act_fn,
+            nn.Linear(32, 16),
+            self.act_fn,
+            nn.Linear(16, 8),
+            self.act_fn,
+            nn.Linear(8, 1),
+        )
 
-        self.sess = sess
+        # job_hid_0 = tl.fully_connected(expanded_state, 32, activation_fn=act_fn)
+        # job_hid_1 = tl.fully_connected(job_hid_0, 16, activation_fn=act_fn)
+        # job_hid_2 = tl.fully_connected(job_hid_1, 8, activation_fn=act_fn)
+        # job_outputs = tl.fully_connected(job_hid_2, 1, activation_fn=None)
+        expand_state_dim = self.job_input_dim + 2 * self.output_dim + 1
+        self.fc_job = nn.Sequential(
+            nn.Linear(expand_state_dim, 32),
+            self.act_fn,
+            nn.Linear(32, 16),
+            self.act_fn,
+            nn.Linear(16, 8),
+            self.act_fn,
+            nn.Linear(8, 1),
+        )
+
+    def forward(self,
+                node_inputs: Tensor,
+                gcn_outputs: Tensor,
+                job_inputs: Tensor,
+                gsn_dag_summary: Tensor,
+                gsn_global_summary: Tensor,
+                node_valid_mask: Tensor,
+                job_valid_mask: Tensor,
+                gsn_summ_backward_map: Tensor):
+        # takes output from graph embedding and raw_input from environment
+
+        batch_size = node_valid_mask.shape[0]
+
+        # (1) reshape node inputs to batch format
+        node_inputs_reshape = node_inputs.reshape(batch_size, -1, self.node_input_dim)
+
+        # (2) reshape job inputs to batch format
+        job_inputs_reshape = job_inputs.reshape(batch_size, -1, self.job_input_dim)
+
+        # (4) reshape gcn_outputs to batch format
+        gcn_outputs_reshape = gcn_outputs.reshape(batch_size, -1, self.output_dim)
+
+        # (5) reshape gsn_dag_summary to batch format
+        gsn_dag_summ_reshape = gsn_dag_summary.reshape(batch_size, -1, self.output_dim)
+
+        gsn_summ_backward_map_extend = gsn_summ_backward_map.unsqueeze(0).repeat(batch_size, 1, 1)
+
+        gsn_dag_summ_extend = torch.bmm(gsn_summ_backward_map_extend, gsn_dag_summ_reshape)
+
+        # (6) reshape gsn_global_summary to batch format
+        gsn_global_summ_reshape = gsn_global_summary.reshape(batch_size, -1, self.output_dim)
+        gsn_global_summ_extend_job = gsn_global_summ_reshape.repeat(1, gsn_dag_summ_reshape.shape[1],
+                                                                    1)  # gsn_dag_summ_reshape.shape[1]为所有图所有节点数量
+        gsn_global_summ_extend_node = gsn_global_summ_reshape.repeat(1, gsn_dag_summ_extend.shape[1], 1)
+
+        # (4) actor neural network
+        # with tf.variable_scope(self.scope):
+        # -- part A, the distribution over nodes --
+        merge_node = torch.concat([
+            node_inputs_reshape, gcn_outputs_reshape,
+            gsn_dag_summ_extend,
+            gsn_global_summ_extend_node],
+            dim=2)
+
+        # 经过全连接
+        node_outputs: Tensor = self.fc_node(merge_node)
+
+        # reshape the output dimension (batch_size, total_num_nodes)
+        node_outputs = node_outputs.reshape(batch_size, -1)
+
+        # valid mask on node
+        node_valid_mask = (node_valid_mask - 1) * 10000.0
+
+        # apply mask
+        node_outputs = node_outputs + node_valid_mask
+
+        # do masked softmax over nodes on the graph
+        node_outputs = torch.softmax(node_outputs, dim=-1)
+
+        # -- part B, the distribution over executor limits --
+        merge_job = torch.concat([
+            job_inputs_reshape,
+            gsn_dag_summ_reshape,
+            gsn_global_summ_extend_job], dim=2)
+
+        expanded_state = tf_op.expand_act_on_state(
+            merge_job, [l / 50.0 for l in self.executor_levels])
+
+        # 经过全连接
+        job_outputs: Tensor = self.fc_job(expanded_state)
+
+        # reshape the output dimension (batch_size, num_jobs * num_exec_limits)
+        job_outputs = job_outputs.reshape(batch_size, -1)
+
+        # valid mask on job
+        job_valid_mask = (job_valid_mask - 1) * 10000.0
+
+        # apply mask
+        job_outputs = job_outputs + job_valid_mask
+
+        # reshape output dimension for softmaxing the executor limits
+        # (batch_size, num_jobs, num_exec_limits)
+        job_outputs = job_outputs.reshape(batch_size, -1, len(self.executor_levels))
+
+        # do masked softmax over jobs
+        job_outputs = torch.softmax(job_outputs, dim=-1)
+
+        return node_outputs, job_outputs
+
+
+class ActorAgent(nn.Module):
+    def __init__(self,
+                 node_input_dim: int,
+                 job_input_dim: int,
+                 hid_dims: list,
+                 output_dim: int,
+                 max_depth: int,
+                 executor_levels: range,
+                 eps=1e-6,
+                 act_fn=nn.LeakyReLU(),
+                 optimizer=tf.compat.v1.train.AdamOptimizer, ):
+
+        super(ActorAgent, self).__init__()
         self.node_input_dim = node_input_dim
         self.job_input_dim = job_input_dim
         self.hid_dims = hid_dims
@@ -29,7 +166,6 @@ class ActorAgent(Agent):
         self.eps = eps
         self.act_fn = act_fn
         self.optimizer = optimizer
-        self.scope = scope
 
         # for computing and storing message passing path
         self.postman = msg_passing_path.Postman()
@@ -40,14 +176,16 @@ class ActorAgent(Agent):
         # job input dimension: [total_num_jobs, num_features]
         self.job_inputs = tf.placeholder(tf.float32, [None, self.job_input_dim])
 
-        self.gcn = GraphCNN(
-            self.node_inputs, self.node_input_dim, self.hid_dims,
-            self.output_dim, self.max_depth, self.act_fn, self.scope)
+        # input node_inputs
+        self.gcn_layer = GraphCNN(
+            self.node_input_dim, self.hid_dims,
+            self.output_dim, self.max_depth, self.act_fn)
+        # gcn_outputs = self.gcn_layer(self.node_inputs)  # 网络输出
 
-        self.gsn = GraphSNN(
-            tf.concat([self.node_inputs, self.gcn.outputs], axis=1),
+        # input [node_input, gcn_outputs, axis=1]
+        self.gsn_layer = GraphSNN(
             self.node_input_dim + self.output_dim, self.hid_dims,
-            self.output_dim, self.act_fn, self.scope)
+            self.output_dim, self.act_fn)
 
         # valid mask for node action ([batch_size, total_num_nodes])
         self.node_valid_mask = tf.placeholder(tf.float32, [None, None])
@@ -61,22 +199,18 @@ class ActorAgent(Agent):
         # map gcn_outputs and raw_inputs to action probabilities
         # node_act_probs: [batch_size, total_num_nodes]
         # job_act_probs: [batch_size, total_num_dags]
-        self.node_act_probs, self.job_act_probs = self.actor_network(
-            self.node_inputs, self.gcn.outputs, self.job_inputs,
-            self.gsn.summaries[0], self.gsn.summaries[1],
-            self.node_valid_mask, self.job_valid_mask,
-            self.dag_summ_backward_map, self.act_fn)
+        self.actor_layer = ActorNetwork(self.node_input_dim,
+                                        self.job_input_dim,
+                                        self.output_dim,
+                                        self.executor_levels,
+                                        self.act_fn)
 
-        # draw action based on the probability (from OpenAI baselines)
-        # node_acts [batch_size, 1]
-        logits = tf.log(self.node_act_probs)
-        noise = tf.random_uniform(tf.shape(logits))
-        self.node_acts = tf.argmax(logits - tf.log(-tf.log(noise)), 1)
+        # self.node_act_probs, self.job_act_probs = self.actor_network(
+        #     self.node_inputs, gcn_outputs, self.job_inputs,
+        #     self.gsn_layer.summaries[0], self.gsn_layer.summaries[1],
+        #     self.node_valid_mask, self.job_valid_mask,
+        #     self.dag_summ_backward_map, self.act_fn)
 
-        # job_acts [batch_size, num_jobs, 1]
-        logits = tf.log(self.job_act_probs)
-        noise = tf.random_uniform(tf.shape(logits))
-        self.job_acts = tf.argmax(logits - tf.log(-tf.log(noise)), 2)
 
         # Selected action for node, 0-1 vector ([batch_size, total_num_nodes])
         self.node_act_vec = tf.placeholder(tf.float32, [None, None])
@@ -92,12 +226,12 @@ class ActorAgent(Agent):
         # select node action probability
         self.selected_node_prob = tf.reduce_sum(tf.multiply(
             self.node_act_probs, self.node_act_vec),
-            reduction_indices=1, keep_dims=True)
+            reduction_indices=1, keepdims=True)
 
         # select job action probability
         self.selected_job_prob = tf.reduce_sum(tf.reduce_sum(tf.multiply(
             self.job_act_probs, self.job_act_vec),
-            reduction_indices=2), reduction_indices=1, keep_dims=True)
+            reduction_indices=2), reduction_indices=1, keepdims=True)
 
         # actor loss due to advantge (negated)
         self.adv_loss = tf.reduce_sum(tf.multiply(
@@ -109,22 +243,22 @@ class ActorAgent(Agent):
 
         # prob on each job
         self.prob_each_job = tf.reshape(
-            tf.sparse_tensor_dense_matmul(self.gsn.summ_mats[0],
+            tf.sparse_tensor_dense_matmul(self.gsn_layer.summ_mats[0],
                                           tf.reshape(self.node_act_probs, [-1, 1])),
             [tf.shape(self.node_act_probs)[0], -1])
 
         # job entropy
         self.job_entropy = tf.reduce_sum(tf.multiply(self.prob_each_job,
-                                      tf.reduce_sum(tf.multiply(self.job_act_probs,
-                                                                tf.log(self.job_act_probs + self.eps)),
-                                                    reduction_indices=2)))
+                                                     tf.reduce_sum(tf.multiply(self.job_act_probs,
+                                                                               tf.log(self.job_act_probs + self.eps)),
+                                                                   reduction_indices=2)))
 
         # entropy loss
         self.entropy_loss = self.node_entropy + self.job_entropy
 
         # normalize entropy
         self.entropy_loss /= (tf.log(tf.cast(tf.shape(self.node_act_probs)[1], tf.float32)) +
-             tf.log(float(len(self.executor_levels))))
+                              tf.log(float(len(self.executor_levels))))
         # normalize over batch size (note: adv_loss is sum)
         # * tf.cast(tf.shape(self.node_act_probs)[0], tf.float32)
 
@@ -132,8 +266,7 @@ class ActorAgent(Agent):
         self.act_loss = self.adv_loss + self.entropy_weight * self.entropy_loss
 
         # get training parameters
-        training_parameters= tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
-
+        training_parameters = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
 
         # actor gradients
         self.act_gradients = tf.gradients(self.act_loss, training_parameters)
@@ -154,100 +287,8 @@ class ActorAgent(Agent):
         if args.saved_model is not None:
             self.saver.restore(self.sess, args.saved_model)
 
-    def actor_network(self, node_inputs, gcn_outputs, job_inputs,
-                      gsn_dag_summary, gsn_global_summary,
-                      node_valid_mask, job_valid_mask,
-                      gsn_summ_backward_map, act_fn):
-
-        # takes output from graph embedding and raw_input from environment
-
-        batch_size = tf.shape(node_valid_mask)[0]
-
-        # (1) reshape node inputs to batch format
-        node_inputs_reshape = tf.reshape(
-            node_inputs, [batch_size, -1, self.node_input_dim])
-
-        # (2) reshape job inputs to batch format
-        job_inputs_reshape = tf.reshape(
-            job_inputs, [batch_size, -1, self.job_input_dim])
-
-        # (4) reshape gcn_outputs to batch format
-        gcn_outputs_reshape = tf.reshape(
-            gcn_outputs, [batch_size, -1, self.output_dim])
-
-        # (5) reshape gsn_dag_summary to batch format
-        gsn_dag_summ_reshape = tf.reshape(
-            gsn_dag_summary, [batch_size, -1, self.output_dim])
-        gsn_summ_backward_map_extend = tf.tile(
-            tf.expand_dims(gsn_summ_backward_map, axis=0), [batch_size, 1, 1])
-        gsn_dag_summ_extend = tf.matmul(
-            gsn_summ_backward_map_extend, gsn_dag_summ_reshape)
-
-        # (6) reshape gsn_global_summary to batch format
-        gsn_global_summ_reshape = tf.reshape(
-            gsn_global_summary, [batch_size, -1, self.output_dim])
-        gsn_global_summ_extend_job = tf.tile(
-            gsn_global_summ_reshape, [1, tf.shape(gsn_dag_summ_reshape)[1], 1])
-        gsn_global_summ_extend_node = tf.tile(
-            gsn_global_summ_reshape, [1, tf.shape(gsn_dag_summ_extend)[1], 1])
-
-        # (4) actor neural network
-        with tf.variable_scope(self.scope):
-            # -- part A, the distribution over nodes --
-            merge_node = tf.concat([
-                node_inputs_reshape, gcn_outputs_reshape,
-                gsn_dag_summ_extend,
-                gsn_global_summ_extend_node], axis=2)
-
-            node_hid_0 = tl.fully_connected(merge_node, 32, activation_fn=act_fn)
-            node_hid_1 = tl.fully_connected(node_hid_0, 16, activation_fn=act_fn)
-            node_hid_2 = tl.fully_connected(node_hid_1, 8, activation_fn=act_fn)
-            node_outputs = tl.fully_connected(node_hid_2, 1, activation_fn=None)
-
-            # reshape the output dimension (batch_size, total_num_nodes)
-            node_outputs = tf.reshape(node_outputs, [batch_size, -1])
-
-            # valid mask on node
-            node_valid_mask = (node_valid_mask - 1) * 10000.0
-
-            # apply mask
-            node_outputs = node_outputs + node_valid_mask
-
-            # do masked softmax over nodes on the graph
-            node_outputs = tf.nn.softmax(node_outputs, dim=-1)
-
-            # -- part B, the distribution over executor limits --
-            merge_job = tf.concat([
-                job_inputs_reshape,
-                gsn_dag_summ_reshape,
-                gsn_global_summ_extend_job], axis=2)
-
-            expanded_state = tf_op.expand_act_on_state(
-                merge_job, [l / 50.0 for l in self.executor_levels])
-
-            job_hid_0 = tl.fully_connected(expanded_state, 32, activation_fn=act_fn)
-            job_hid_1 = tl.fully_connected(job_hid_0, 16, activation_fn=act_fn)
-            job_hid_2 = tl.fully_connected(job_hid_1, 8, activation_fn=act_fn)
-            job_outputs = tl.fully_connected(job_hid_2, 1, activation_fn=None)
-
-            # reshape the output dimension (batch_size, num_jobs * num_exec_limits)
-            job_outputs = tf.reshape(job_outputs, [batch_size, -1])
-
-            # valid mask on job
-            job_valid_mask = (job_valid_mask - 1) * 10000.0
-
-            # apply mask
-            job_outputs = job_outputs + job_valid_mask
-
-            # reshape output dimension for softmaxing the executor limits
-            # (batch_size, num_jobs, num_exec_limits)
-            job_outputs = tf.reshape(
-                job_outputs, [batch_size, -1, len(self.executor_levels)])
-
-            # do masked softmax over jobs
-            job_outputs = tf.nn.softmax(job_outputs, dim=-1)
-
-            return node_outputs, job_outputs
+    def forward(self):
+        pass
 
     def apply_gradients(self, gradients, lr_rate):
         self.sess.run(self.apply_grads, feed_dict={
@@ -255,7 +296,6 @@ class ActorAgent(Agent):
                 self.act_gradients + [self.lr_rate],
                 gradients + [lr_rate])
         })
-
 
     def save_model(self, file_path):
         self.saver.save(self.sess, file_path)
@@ -275,11 +315,11 @@ class ActorAgent(Agent):
                                  self.job_valid_mask: job_valid_mask,
 
                                  # GCN相关占位符和数据
-                                 **{placeholder: data for placeholder, data in zip(self.gcn.adj_mats, gcn_mats)},
-                                 **{placeholder: data for placeholder, data in zip(self.gcn.masks, gcn_masks)},
+                                 **{placeholder: data for placeholder, data in zip(self.gcn_layer.adj_mats, gcn_mats)},
+                                 **{placeholder: data for placeholder, data in zip(self.gcn_layer.masks, gcn_masks)},
                                  # GSN相关占位符和数据
                                  **{placeholder: data for placeholder, data in
-                                    zip(self.gsn.summ_mats, [summ_mats, running_dags_mat])},
+                                    zip(self.gsn_layer.summ_mats, [summ_mats, running_dags_mat])},
 
                                  self.dag_summ_backward_map: dag_summ_backward_map,
                                  self.node_act_vec: node_act_vec,
@@ -292,23 +332,39 @@ class ActorAgent(Agent):
                 node_valid_mask, job_valid_mask,
                 gcn_mats, gcn_masks, summ_mats,
                 running_dags_mat, dag_summ_backward_map):
-        return self.sess.run([self.node_act_probs, self.job_act_probs, self.node_acts, self.job_acts],
-                             feed_dict=
-                             {
-                                 self.node_inputs: node_inputs,
-                                 self.job_inputs: job_inputs,
-                                 self.node_valid_mask: node_valid_mask,
-                                 self.job_valid_mask: job_valid_mask,
 
-                                 # GCN相关占位符和数据
-                                 **{placeholder: data for placeholder, data in zip(self.gcn.adj_mats, gcn_mats)},
-                                 **{placeholder: data for placeholder, data in zip(self.gcn.masks, gcn_masks)},
-                                 # GSN相关占位符和数据
-                                 **{placeholder: data for placeholder, data in
-                                    zip(self.gsn.summ_mats, [summ_mats, running_dags_mat])},
+        gcn_outputs = self.gcn_layer(node_inputs, gcn_mats, gcn_mats)  # 网络输出
+        summarys = self.gsn_layer(torch.concat([node_inputs, gcn_outputs], dim=1), [summ_mats, running_dags_mat])
 
-                                 self.dag_summ_backward_map: dag_summ_backward_map
-                             })
+
+
+        node_act_probs, job_act_probs = self.actor_layer(
+            node_inputs,
+            gcn_outputs,
+            job_inputs,
+            summarys[0], # dag
+            summarys[1], # global
+            node_valid_mask,
+            job_valid_mask,
+            dag_summ_backward_map
+        )
+
+        # draw action based on the probability (from OpenAI baselines)
+        # node_acts [batch_size, 1]
+        # 计算对数概率
+        logits = torch.log(node_act_probs)
+        # 生成均匀噪声
+        noise = torch.rand_like(logits)
+        node_acts = torch.argmax(logits - torch.log(-torch.log(noise)), 1)
+
+        # job_acts [batch_size, num_jobs, 1]
+        logits = torch.log(job_act_probs)
+        noise = torch.rand_like(logits)
+        job_acts = torch.argmax(logits - torch.log(-torch.log(noise)), 2)
+
+
+        return node_act_probs, job_act_probs, node_acts, job_acts
+
 
     def translate_state(self, obs):
         """
@@ -402,7 +458,7 @@ class ActorAgent(Agent):
         for job_dag in job_dags:
             # new executor level depends on the source of executor
             if job_dag is source_job:
-                least_exec_amount =  exec_map[job_dag] - num_source_exec + 1
+                least_exec_amount = exec_map[job_dag] - num_source_exec + 1
                 # +1 because we want at least one executor
                 # for this job
             else:
