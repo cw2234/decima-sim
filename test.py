@@ -1,3 +1,4 @@
+import os
 import tensorflow.compat.v1 as tf
 tf.disable_eager_execution()
 import matplotlib
@@ -83,7 +84,7 @@ for exp in range(args.num_exp):
     ax = fig.add_subplot(111)
 
     for scheme in args.test_schemes:
-        x, y = compute_CDF(all_total_reward[scheme])
+        x, y = utils.compute_CDF(all_total_reward[scheme])
         ax.plot(x, y)
 
     plt.xlabel('Total reward')

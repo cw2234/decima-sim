@@ -95,7 +95,7 @@ def get_poly_baseline(polyfit_model, all_wall_time):
     # use 5th order polynomial to get a baseline
     # normalize the time
     max_time = float(max([max(wall_time) for wall_time in all_wall_time]))
-    max_time = max(1, max_time)
+    max_time = max(1.0, max_time)
     baselines = []
     for i in range(len(all_wall_time)):
         normalized_time = [t / max_time for t in all_wall_time[i]]
@@ -120,7 +120,7 @@ def get_wall_time_baseline(all_cum_rewards, all_wall_time):
     assert len(list_cum_rewards) == len(list_wall_time)
     # normalize the time by the max time
     max_time = float(max(list_wall_time))
-    max_time = max(1, max_time)
+    max_time = max(1.0, max_time)
     list_wall_time = [t / max_time for t in list_wall_time]
     polyfit_model = np.polyfit(list_wall_time, list_cum_rewards, 5)
     baselines = get_poly_baseline(polyfit_model, all_wall_time)

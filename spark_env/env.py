@@ -1,9 +1,7 @@
 import numpy as np
-import copy
-from collections import OrderedDict
 from param import args
 import utils
-from spark_env.action_map import compute_act_map, get_frontier_acts
+from spark_env.action_map import compute_act_map
 from spark_env.reward_calculator import RewardCalculator
 from spark_env.moving_executors import MovingExecutors
 from spark_env.executor_commit import ExecutorCommit
