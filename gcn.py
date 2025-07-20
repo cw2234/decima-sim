@@ -6,12 +6,18 @@ via parameterized message passing scheme
 """
 
 import tensorflow as tf
-
+from tensorflow.python.framework.ops import Tensor
 from tf_op import glorot, zeros
 
 
 class GraphCNN(object):
-    def __init__(self, inputs, input_dim, hid_dims, output_dim, max_depth, act_fn, scope='gcn'):
+    def __init__(self,
+                 inputs: Tensor,
+                 input_dim: int,
+                 hid_dims: list,
+                 output_dim: int, max_depth: int,
+                 act_fn,
+                 scope='gcn'):
 
         self.inputs = inputs
 

@@ -3,8 +3,9 @@ from time import localtime, strftime
 from param import args
 
 
+
 class TFLogger(object):
-    def __init__(self, sess, var_list):
+    def __init__(self, sess: tf.Session, var_list):
         self.sess = sess
 
         self.summary_vars = []

@@ -6,12 +6,17 @@ via parameterized aggregation scheme
 """
 
 import tensorflow as tf
+from tensorflow.python.framework.ops import Tensor
 
 from tf_op import glorot, zeros
 
 
 class GraphSNN(object):
-    def __init__(self, inputs, input_dim, hid_dims, output_dim, act_fn, scope='gsn'):
+    def __init__(self,
+                 inputs: Tensor,
+                 input_dim: int,
+                 hid_dims: list,
+                 output_dim, act_fn, scope='gsn'):
         # on each transformation, input_dim -> (multiple) hid_dims -> output_dim
         # the global level summarization will use output from DAG level summarizaiton
 
@@ -39,7 +44,7 @@ class GraphSNN(object):
         # graph summarization operation
         self.summaries = self.summarize()
 
-    def init(self, input_dim, hid_dims, output_dim):
+    def init(self, input_dim: int, hid_dims: list, output_dim: int):
         # Initialize the parameters
         # these weights may need to be re-used
         # e.g., we may want to propagate information multiple times

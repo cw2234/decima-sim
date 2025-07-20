@@ -102,6 +102,7 @@ def invoke_model(actor_agent: ActorAgent, obs, experience):
 
 
 def main():
+    print(type(range(1, args.exec_cap + 1)))
     np.random.seed(args.seed)
     tf.set_random_seed(args.seed)
 
@@ -115,11 +116,15 @@ def main():
     # 创建环境
     env = Environment()
     config = tf.ConfigProto(device_count={'GPU': args.worker_num_gpu},
-                                   gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=args.worker_gpu_fraction))
+                            gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=args.worker_gpu_fraction))
     sess = tf.Session(config=config)
-    actor_agent = ActorAgent(sess, args.node_input_dim, args.job_input_dim, args.hid_dims,
-                                    args.output_dim,
-                                    args.max_depth, range(1, args.exec_cap + 1))
+    actor_agent = ActorAgent(sess,
+                             args.node_input_dim,
+                             args.job_input_dim,
+                             args.hid_dims,
+                             args.output_dim,
+                             args.max_depth,
+                             range(1, args.exec_cap + 1))
 
     # tensorboard logging
     tf_logger = TFLogger(sess,
@@ -248,11 +253,10 @@ def main():
         entropy = -loss[1] / float(cum_reward.shape[0])
         value_loss = loss[2]
 
-
         t4 = time.time()
         print('worker send back gradients', t4 - t3, 'seconds')
 
-        actor_agent.apply_gradients(actor_gradient, args.lr) # 应用梯度
+        actor_agent.apply_gradients(actor_gradient, args.lr)  # 应用梯度
 
         t5 = time.time()
         print('apply gradient', t5 - t4, 'seconds')
