@@ -3,7 +3,8 @@ import os
 # os.environ['CUDA_VISIBLE_DEVICES']=''
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import time
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
 import numpy as np
 
 from param import args

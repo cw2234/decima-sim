@@ -1,4 +1,5 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_eager_execution()
 import matplotlib
 matplotlib.use('agg')
 from spark_env.env import Environment

@@ -1,5 +1,6 @@
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
 from tensorflow.python.framework.ops import Tensor
 import bisect
 
@@ -28,7 +29,6 @@ class ActorAgent(Agent):
                  scope='actor_agent'):
 
         Agent.__init__(self)
-
         self.sess = sess
         self.node_input_dim = node_input_dim
         self.job_input_dim = job_input_dim

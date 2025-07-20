@@ -5,7 +5,8 @@ Summarize node features globally
 via parameterized aggregation scheme
 """
 
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
 from tensorflow.python.framework.ops import Tensor
 
 from tf_op import glorot, zeros

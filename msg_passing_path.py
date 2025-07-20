@@ -6,7 +6,8 @@ node points at each iteration)
 """
 
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()  # 禁用 TensorFlow 2.x 的行为，启用 1.x 兼容模式
 from utils import OrderedSet
 import sparse_op
 from param import args
