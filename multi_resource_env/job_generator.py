@@ -1,13 +1,12 @@
 import os
 from param import *
 from utils import *
-from spark_env.job_dag import *
-from spark_env.job_generator import pre_process_task_duration, recursive_find_descendant
+from multi_resource_env.job_dag import *
 from multi_resource_env.node import MultiResNode as Node
 from multi_resource_env.task import MultiResTask as Task
 
 
-# overwrite spark_env job_generator's load_job
+# overwrite  job_generator's load_job
 def load_job(file_path, query_size, query_idx, wall_time, np_random):
     query_path = file_path + query_size + '/'
     
@@ -68,6 +67,45 @@ def load_job(file_path, query_size, query_idx, wall_time, np_random):
         args.query_type + '-' + query_size + '-' + str(query_idx))
 
     return job_dag
+
+def pre_process_task_duration(task_duration):
+    # remove fresh durations from first wave
+    clean_first_wave = {}
+    for e in task_duration['first_wave']:
+        clean_first_wave[e] = []
+        fresh_durations = SetWithCount()
+        # O(1) access
+        for d in task_duration['fresh_durations'][e]:
+            fresh_durations.add(d)
+        for d in task_duration['first_wave'][e]:
+            if d not in fresh_durations:
+                clean_first_wave[e].append(d)
+            else:
+                # prevent duplicated fresh duration blocking first wave
+                fresh_durations.remove(d)
+
+    # fill in nearest neighour first wave
+    last_first_wave = []
+    for e in sorted(clean_first_wave.keys()):
+        if len(clean_first_wave[e]) == 0:
+            clean_first_wave[e] = last_first_wave
+        last_first_wave = clean_first_wave[e]
+
+    # swap the first wave with fresh durations removed
+    task_duration['first_wave'] = clean_first_wave
+
+
+def recursive_find_descendant(node):
+    if len(node.descendant_nodes) > 0:  # already visited
+        return node.descendant_nodes
+    else:
+        node.descendant_nodes = [node]
+        for child_node in node.child_nodes:  # terminate on leaves automatically
+            child_descendant_nodes = recursive_find_descendant(child_node)
+            for dn in child_descendant_nodes:
+                if dn not in node.descendant_nodes:  # remove dual path duplicates
+                    node.descendant_nodes.append(dn)
+        return node.descendant_nodes
 
 def alibaba_load_job(query_name, query_idx, wall_time, np_random):
     try:

@@ -2,10 +2,9 @@ import numpy as np
 import copy
 from param import *
 from utils import *
-from spark_env.env import Environment as SparkEnvironment
-from spark_env.free_executors import FreeExecutors
-from spark_env.action_map import compute_act_map
-from spark_env.job_dag import JobDAG
+from multi_resource_env.free_executors import FreeExecutors
+from multi_resource_env.action_map import compute_act_map
+from multi_resource_env.job_dag import JobDAG
 from multi_resource_env.node import MultiResNode as Node
 from multi_resource_env.task import MultiResTask as Task
 from multi_resource_env.executor import MultiResExecutor as Executor
@@ -13,11 +12,43 @@ from multi_resource_env.executor_commit import MultiResExecutorCommit as Executo
 from multi_resource_env.job_generator import generate_jobs
 from multi_resource_env.group_executors import group_executors
 from multi_resource_env.node_selected import NodeSelected
+from multi_resource_env.wall_time import WallTime
+from multi_resource_env.timeline import Timeline
+from multi_resource_env.moving_executors import MovingExecutors
+from multi_resource_env.reward_calculator import RewardCalculator
 
 
-class MultiResEnvironment(SparkEnvironment):
+class MultiResEnvironment():
     def __init__(self):
-        SparkEnvironment.__init__(self)
+        # SparkEnvironment.__init__(self)
+        # isolated random number generator
+        self.np_random = np.random.RandomState()
+
+        # global timer
+        self.wall_time = WallTime()
+
+        # uses priority queue
+        self.timeline = Timeline()
+
+        # executors
+        # self.executors = OrderedSet()
+        # for exec_id in range(args.exec_cap):
+        #     self.executors.add(Executor(exec_id))
+
+        # free executors
+        # self.free_executors = FreeExecutors(self.executors)
+
+        # moving executors
+        self.moving_executors = MovingExecutors()
+
+        # executor commit
+        self.exec_commit = ExecutorCommit()
+
+        # prevent agent keeps selecting the same node
+        # self.node_selected = set()
+
+        # for computing reward at each step
+        self.reward_calculator = RewardCalculator()
 
         # overwrite executors
         assert len(args.exec_group_num) == len(args.exec_cpus)
@@ -40,6 +71,11 @@ class MultiResEnvironment(SparkEnvironment):
         
         # overwrite node selected
         self.node_selected = NodeSelected(len(args.exec_group_num))
+
+    def add_job(self, job_dag):
+        self.moving_executors.add_job(job_dag)
+        self.free_executors.add_job(job_dag)
+        self.exec_commit.add_job(job_dag)
 
     def assign_executor(self, executor, frontier_changed):
         # overwrite how we represent available executors
@@ -151,6 +187,15 @@ class MultiResEnvironment(SparkEnvironment):
         return self.job_dags, self.source_job, self.num_source_exec, \
                self.get_frontier_nodes(self.num_source_exec), \
                self.exec_commit, self.moving_executors, self.action_map
+
+    def saturated(self, node):
+        # frontier nodes := unsaturated nodes with all parent nodes saturated
+        anticipated_task_idx = node.next_task_idx + \
+           self.exec_commit.node_commit[node] + \
+           self.moving_executors.count(node)
+        # note: anticipated_task_idx can be larger than node.num_tasks
+        # when the tasks finish very fast before commitments are fulfilled
+        return anticipated_task_idx >= node.num_tasks
 
     def schedule(self):
         executor = next(iter(self.exec_to_schedule))
@@ -330,6 +375,15 @@ class MultiResEnvironment(SparkEnvironment):
 
         return self.observe(), reward, done
 
+    def remove_job(self, job_dag):
+        for executor in list(job_dag.executors):
+            executor.detach_job()
+        self.exec_commit.remove_job(job_dag)
+        self.free_executors.remove_job(job_dag)
+        self.moving_executors.remove_job(job_dag)
+        self.job_dags.remove(job_dag)
+        self.finished_job_dags.add(job_dag)
+        self.action_map = compute_act_map(self.job_dags)
 
     def reset(self, max_time=np.inf):
         self.max_time = max_time
@@ -356,3 +410,6 @@ class MultiResEnvironment(SparkEnvironment):
         self.num_source_exec = group_executors(
             self.executors, len(args.exec_group_num))
         self.exec_to_schedule = OrderedSet(self.executors)
+
+    def seed(self, seed):
+        self.np_random.seed(seed)

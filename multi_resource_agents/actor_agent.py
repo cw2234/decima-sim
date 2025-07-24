@@ -9,8 +9,8 @@ from msg_passing_path import *
 from gcn import GraphCNN
 from gsn import GraphSNN
 from agent import Agent
-from spark_env.job_dag import JobDAG
-from spark_env.node import Node
+from multi_resource_env.job_dag import JobDAG
+from multi_resource_env.node import MultiResNode as Node
 
 
 class MultiResActorAgent(Agent):

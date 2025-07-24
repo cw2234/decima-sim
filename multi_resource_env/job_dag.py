@@ -3,7 +3,7 @@ import numpy as np
 from collections import OrderedDict
 from utils import OrderedSet
 from param import *
-from spark_env.node import NodeDuration
+from multi_resource_env.node import NodeDuration
 
 class JobDAG(object):
     def __init__(self, nodes, adj_mat, name):

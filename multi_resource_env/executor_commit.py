@@ -1,13 +1,21 @@
 from collections import OrderedDict
-from spark_env.executor_commit import ExecutorCommit
-from param import *
+from param import args
 
 
-class MultiResExecutorCommit(ExecutorCommit):
+class MultiResExecutorCommit:
     def __init__(self):
-        ExecutorCommit.__init__(self)
+
+        # {node/job_dag -> ordered{node -> amount}}
+        self.commit = {}
+        # {node -> amount}
+        self.node_commit = {}
+        # {node -> set(nodes/job_dags)}
+        self.backward_map = {}
+
         self.num_exec_group = len(args.exec_group_num)
         self.commit = [{} for _ in range(self.num_exec_group)]
+    def __getitem__(self, source):
+        return self.commit[source]
 
     def add_job(self, job_dag):
         # add commit entry to the map
@@ -82,7 +90,12 @@ class MultiResExecutorCommit(ExecutorCommit):
             del self.node_commit[node]
 
     def reset(self):
-        ExecutorCommit.reset(self)
+        self.commit = {}
+        self.node_commit = {}
+        # for agent to make void action
+        self.commit[None] = OrderedDict()
+        self.node_commit[None] = 0
+
         self.backward_map = {}
         self.commit = [{} for _ in range(self.num_exec_group)]
         for i in range(self.num_exec_group):

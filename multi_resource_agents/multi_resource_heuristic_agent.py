@@ -1,7 +1,7 @@
 import numpy as np
 from param import *
 from agent import Agent
-from spark_env.job_dag import JobDAG
+from multi_resource_env.job_dag import JobDAG
 from multi_resource_env.node import MultiResNode as Node
 
 
