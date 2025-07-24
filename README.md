@@ -27,3 +27,4 @@ pip install tensorflow==1.7 numpy==1.16 networkx
 
 python train.py --exec_cap 50 --num_init_dags 1 --num_stream_dags 200 --reset_prob 5e-7 --reset_prob_min 5e-8 --reset_prob_decay 4e-10 --diff_reward_enabled 1 --num_agents 16 --model_save_interval 100 --model_folder ./models/stream_200_job_diff_reward_reset_5e-7_5e-8/
 python multi_resource_train.py --node_input_dim 7 --job_input_dim 4  --exec_cap 50 --num_init_dags 1 --num_stream_dags 200 --reset_prob 5e-7 --reset_prob_min 5e-8 --reset_prob_decay 4e-10 --diff_reward_enabled 1 --num_agents 16 --model_save_interval 100 --model_folder ./models/stream_200_job_diff_reward_reset_5e-7_5e-8/
+--node_input_dim 7 --job_input_dim 4 --exec_cap 50 --num_init_dags 2 --num_stream_dags 2 --canvs_visualization 0 --test_schemes packer learn --num_exp 1 --saved_model ./models/stream_200_job_diff_reward_reset_5e-7_5e-8/model_ep_20

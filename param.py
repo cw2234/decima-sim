@@ -11,7 +11,7 @@ parser.add_argument('--num_proc', type=int, default=1,
                     help='number of processors (default: 1)')
 parser.add_argument('--num_exp', type=int, default=10,
                     help='number of experiments (default: 10)')
-parser.add_argument('--query_type', type=str, default='tpch',
+parser.add_argument('--query_type', type=str, default='my',
                     help='query type (default: tpch)')
 parser.add_argument('--job_folder', type=str, default='./spark_env/tpch/',
                     help='job folder path (default: ./spark_env/tpch/)')
@@ -34,7 +34,7 @@ parser.add_argument('--num_stream_dags_max', type=float, default=500,
 parser.add_argument('--stream_interval', type=int, default=25000,
                     help='inter job arrival time in milliseconds (default: 25000)')
 parser.add_argument('--executor_data_point', type=int,
-                    default=[5, 10, 20, 40, 50, 60, 80, 100], nargs='+',
+                    default=[1], nargs='+',
                     help='Number of executors used in data collection')
 parser.add_argument('--reward_scale', type=float, default=100000.0,
                     help='scale the reward to some normal values (default: 100000.0)')
@@ -55,13 +55,13 @@ parser.add_argument('--new_dag_interval_noise', type=int, default=1000,
 
 # -- Multi resource environment --
 parser.add_argument('--exec_group_num', type=int,
-                    default=[50, 50], nargs='+',
+                    default=[50], nargs='+',
                     help='Number of executors in each type group (default: [50, 50])')
 parser.add_argument('--exec_cpus', type=float,
-                    default=[1.0, 1.0], nargs='+',
+                    default=[1.0], nargs='+',
                     help='Amount of CPU in each type group (default: [1.0, 1.0])')
-parser.add_argument('--exec_mems', type=float,
-                    default=[1.0, 0.5], nargs='+',
+parser.add_argument('--exec_mems', type=int,
+                    default=[10000000], nargs='+',
                     help='Amount of memory in each type group (default: [1.0, 0.5])')
 
 # -- Evaluation --

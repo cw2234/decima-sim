@@ -389,18 +389,23 @@ class MultiResActorAgent(Agent):
 
         # gather job level inputs
         job_idx = 0
+
         for job_dag in job_dags:
+            job_feature_idx = 0
             # number of executors in the job
-            job_inputs[job_idx, 0] = exec_map[job_dag] / 20.0
+            job_inputs[job_idx, job_feature_idx] = exec_map[job_dag] / 20.0
             # the current executor belongs to this job or not
+            job_feature_idx += 1
             if job_dag is source_job:
-                job_inputs[job_idx, 1] = 2
+                job_inputs[job_idx, job_feature_idx] = 2
             else:
-                job_inputs[job_idx, 1] = -2
+                job_inputs[job_idx, job_feature_idx] = -2
+
+            job_feature_idx += 1
             # number of type 1 source executors
-            job_inputs[job_idx, 2] = num_source_exec[0] / 20.0
-            # number of type 2 source executors
-            job_inputs[job_idx, 3] = num_source_exec[1] / 20.0
+            job_inputs[job_idx, job_feature_idx] = num_source_exec[0] / 20.0
+            # # number of type 2 source executors
+            # job_inputs[job_idx, 3] = num_source_exec[1] / 20.0
 
             job_idx += 1
 
@@ -410,19 +415,23 @@ class MultiResActorAgent(Agent):
         for job_dag in job_dags:
             for node in job_dag.nodes:
                 # copy the feature from job_input first
-                node_inputs[node_idx, :4] = job_inputs[job_idx, :4]
+                node_feature_idx = job_feature_idx + 1
+                node_inputs[node_idx, :node_feature_idx] = job_inputs[job_idx, :node_feature_idx]
 
+                # node_feature_idx += 1
                 # work on the node
-                node_inputs[node_idx, 4] = \
+                node_inputs[node_idx, node_feature_idx] = \
                     (node.num_tasks - node.next_task_idx) * \
                     node.tasks[-1].duration / 100000.0
 
+                node_feature_idx += 1
                 # number of tasks left
-                node_inputs[node_idx, 5] = \
+                node_inputs[node_idx, node_feature_idx] = \
                     (node.num_tasks - node.next_task_idx) / 200.0
 
+                node_feature_idx += 1
                 # size of memory request
-                node_inputs[node_idx, 6] = \
+                node_inputs[node_idx, node_feature_idx] = \
                     node.mem
 
                 node_idx += 1

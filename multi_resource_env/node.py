@@ -26,9 +26,9 @@ class MultiResNode:
         self.executors = OrderedSet()
 
         # uninitialized
-        self.parent_nodes = []
-        self.child_nodes = []
-        self.descendant_nodes = []
+        self.parent_nodes = [] # 该结点的双亲
+        self.child_nodes = [] # 该结点的孩子
+        self.descendant_nodes = [] # 该结点的后代
         self.job_dag = None
 
         self.assign_node_to_tasks()
@@ -168,31 +168,31 @@ class MultiResNode:
         return task
 
 
-class NodeDuration(object):
-    # A light-weighted extra storage for node duration
-
-    def __init__(self, node):
-        self.node = node
-
-        self.task_idx = 0  # next unscheduled task index
-        self.duration = self.node.get_node_duration()
-
-        # uninitialized when node is created
-        # but can be initialized when job_dag is created
-        self.descendant_work = 0  # total work of descedent nodes
-        self.descendant_cp = 0    # critical path of descdent nodes
-
-
-def dfs_nodes_order_by_id(node, nodes_order):
-    # Depth first search by node id, use recursive search
-    # this is for faithfully reproduce spark scheduling logic
-    parent_id = []
-    parent_map = {}
-    for n in node.parent_nodes:
-        parent_id.append(n.idx)
-        parent_map[n.idx] = n
-    parent_id = sorted(parent_id)
-    for i in parent_id:
-        dfs_nodes_order_by_id(parent_map[i], nodes_order)
-    if node.idx not in nodes_order:
-        nodes_order.append(node.idx)
+# class NodeDuration(object):
+#     # A light-weighted extra storage for node duration
+#
+#     def __init__(self, node):
+#         self.node = node
+#
+#         self.task_idx = 0  # next unscheduled task index
+#         self.duration = self.node.get_node_duration()
+#
+#         # uninitialized when node is created
+#         # but can be initialized when job_dag is created
+#         self.descendant_work = 0  # total work of descedent nodes
+#         self.descendant_cp = 0    # critical path of descdent nodes
+#
+#
+# def dfs_nodes_order_by_id(node, nodes_order):
+#     # Depth first search by node id, use recursive search
+#     # this is for faithfully reproduce spark scheduling logic
+#     parent_id = []
+#     parent_map = {}
+#     for n in node.parent_nodes:
+#         parent_id.append(n.idx)
+#         parent_map[n.idx] = n
+#     parent_id = sorted(parent_id)
+#     for i in parent_id:
+#         dfs_nodes_order_by_id(parent_map[i], nodes_order)
+#     if node.idx not in nodes_order:
+#         nodes_order.append(node.idx)

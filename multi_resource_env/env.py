@@ -282,7 +282,7 @@ class MultiResEnvironment(object):
             # case executor: an executor arrives at certain job
 
             if isinstance(obj, MultiResTask):  # task completion event
-                finished_task = obj
+                finished_task: MultiResTask = obj
                 node = finished_task.node
                 node.num_finished_tasks += 1
 
@@ -307,7 +307,7 @@ class MultiResEnvironment(object):
                     self._remove_job(node.job_dag)
 
             elif isinstance(obj, JobDAG):  # new job arrival event
-                job_dag = obj
+                job_dag: JobDAG = obj
                 # job should be arrived at the first time
                 assert not job_dag.arrived
                 job_dag.arrived = True
@@ -326,7 +326,7 @@ class MultiResEnvironment(object):
                             len(args.exec_group_num))
 
             elif isinstance(obj, MultiResExecutor):  # executor arrival event
-                executor = obj
+                executor: MultiResExecutor = obj
                 # pop destination from the tracking record
                 node = self.moving_executors.pop(executor)
 
