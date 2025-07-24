@@ -1,7 +1,8 @@
 import os
-from param import *
-from utils import *
-from multi_resource_env.job_dag import *
+from param import args
+import numpy as np
+import utils
+from multi_resource_env.job_dag import JobDAG
 from multi_resource_env.node import MultiResNode as Node
 from multi_resource_env.task import MultiResTask as Task
 
@@ -73,7 +74,7 @@ def pre_process_task_duration(task_duration):
     clean_first_wave = {}
     for e in task_duration['first_wave']:
         clean_first_wave[e] = []
-        fresh_durations = SetWithCount()
+        fresh_durations = utils.SetWithCount()
         # O(1) access
         for d in task_duration['fresh_durations'][e]:
             fresh_durations.add(d)
@@ -113,7 +114,7 @@ def alibaba_load_job(query_name, query_idx, wall_time, np_random):
         task_durations = np.load('./multi_resource_env/alibaba/dags/task_duration_'
                             + str(query_idx) + '.npy', encoding = 'latin1').item()
     except IOError:
-        print("Logs of the query " + query + " not exist")
+        print("Logs of the query " + query_name + " not exist")
         exit(1)
 
     assert adj_mat.shape[0] == adj_mat.shape[1]
@@ -177,7 +178,7 @@ def alibaba_load_job(query_name, query_idx, wall_time, np_random):
 
 def generate_alibaba_jobs(np_random, timeline, wall_time):
     
-    job_dags = OrderedSet()
+    job_dags = utils.OrderedSet()
     t = 0
 
     with open('./multi_resource_env/alibaba/alibaba_valid_file_ids.txt', 'r') as f:
@@ -216,7 +217,7 @@ def generate_alibaba_jobs(np_random, timeline, wall_time):
 
 def generate_tpch_jobs(np_random, timeline, wall_time):
 
-    job_dags = OrderedSet()
+    job_dags = utils.OrderedSet()
     t = 0
 
     for _ in range(args.num_init_dags):

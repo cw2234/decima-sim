@@ -1,5 +1,5 @@
-from param import *
-from utils import *
+from param import args
+import utils
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -36,7 +36,7 @@ def visualize_executor_usage(job_dags, file_path):
     # plt.plot(executor_occupation)
     # plt.fill_between(range(len(executor_occupation)), 0,
     #                  executor_occupation)
-    plt.plot(moving_average(executor_occupation, 10000))
+    plt.plot(utils.moving_average(executor_occupation, 10000))
 
     plt.ylabel('Number of busy executors')
     plt.title('Executor usage: ' + str(executor_usage) + \

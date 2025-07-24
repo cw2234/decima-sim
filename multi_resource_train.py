@@ -6,13 +6,13 @@ import time
 import numpy as np
 import tensorflow as tf
 import multiprocessing as mp
-from param import *
-from utils import *
+from param import args
+import utils
 from multi_resource_env.env import MultiResEnvironment as Env
 from multi_resource_agents.actor_agent import MultiResActorAgent
-from average_reward import *
-from compute_baselines import *
-from compute_gradients import *
+from average_reward import AveragePerStepReward
+import compute_baselines
+import compute_gradients
 from tf_logger import TFLogger
 
 
@@ -143,12 +143,12 @@ def train_agent(agent_id, param_queue, reward_queue, adv_queue, gradient_queue):
             env.reset(max_time=max_time)
 
             # set up storage for experience
-            exp = {'node_inputs': [], 'job_inputs': [], \
-                   'gcn_mats': [], 'gcn_masks': [], \
-                   'summ_mats': [], 'running_dag_mat': [], \
-                   'dag_summ_back_mat': [], \
-                   'node_act_vec': [], 'job_act_vec': [], \
-                   'node_valid_mask': [], 'job_valid_mask': [], \
+            exp = {'node_inputs': [], 'job_inputs': [],
+                   'gcn_mats': [], 'gcn_masks': [],
+                   'summ_mats': [], 'running_dag_mat': [],
+                   'dag_summ_back_mat': [],
+                   'node_act_vec': [], 'job_act_vec': [],
+                   'node_valid_mask': [], 'job_valid_mask': [],
                    'reward': [], 'wall_time': [],
                    'job_state_change': []}
 
@@ -201,7 +201,7 @@ def train_agent(agent_id, param_queue, reward_queue, adv_queue, gradient_queue):
         # compute gradients
         if batch_adv is not None:
             try:
-                actor_gradient, loss = compute_actor_gradients(
+                actor_gradient, loss = compute_gradients.compute_actor_gradients(
                     actor_agent, exp, batch_adv, entropy_weight)
 
                 # report gradient to master
@@ -215,8 +215,8 @@ def main():
     tf.set_random_seed(args.seed)
 
     # create result and model folder
-    create_folder_if_not_exists(args.result_folder)
-    create_folder_if_not_exists(args.model_folder)
+    utils.create_folder_if_not_exists(args.result_folder)
+    utils.create_folder_if_not_exists(args.model_folder)
 
     # initialize communication queues
     params_queues = [mp.Queue(1) for _ in range(args.num_agents)]
@@ -274,7 +274,7 @@ def main():
         actor_params = actor_agent.get_params()
 
         # generate max time stochastically based on reset prob
-        max_time = generate_coin_flips(reset_prob)
+        max_time = utils.generate_coin_flips(reset_prob)
 
         # send out parameters to training agents
         for i in range(args.num_agents):
@@ -331,12 +331,12 @@ def main():
                     rewards = np.array([r for \
                         (r, t) in zip(all_rewards[i], all_diff_times[i])])
 
-                cum_reward = discount(rewards, args.gamma)
+                cum_reward = utils.discount(rewards, args.gamma)
 
                 all_cum_reward.append(cum_reward)
 
             # compute baseline
-            baselines = get_piecewise_linear_fit_baseline(all_cum_reward, all_times)
+            baselines = compute_baselines.get_piecewise_linear_fit_baseline(all_cum_reward, all_times)
 
             # give worker back the advantage
             for i in range(args.num_agents):
@@ -373,7 +373,7 @@ def main():
 
             if gradient_valid:
                 actor_agent.apply_gradients(
-                    aggregate_gradients(actor_gradients), args.lr)
+                    utils.aggregate_gradients(actor_gradients), args.lr)
 
                 t5 = time.time()
                 print('apply gradient', t5 - t4, 'seconds')
@@ -392,11 +392,11 @@ def main():
                     entropy_weight])
 
                 # decrease entropy weight
-                entropy_weight = decrease_var(entropy_weight,
+                entropy_weight = utils.decrease_var(entropy_weight,
                     args.entropy_weight_min, args.entropy_weight_decay)
 
                 # decrease reset probability
-                reset_prob = decrease_var(reset_prob,
+                reset_prob = utils.decrease_var(reset_prob,
                     args.reset_prob_min, args.reset_prob_decay)
 
             else:

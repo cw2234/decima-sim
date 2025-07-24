@@ -1,10 +1,10 @@
-from param import *
-from utils import *
-from sparse_op import expand_sp_mat, merge_and_extend_sp_mat
+import numpy as np
+import utils
+import sparse_op
 
 
 def compute_actor_gradients(actor_agent, exp, batch_adv, entropy_weight):
-    batch_points = truncate_experiences(exp['job_state_change'])
+    batch_points = utils.truncate_experiences(exp['job_state_change'])
 
     all_gradients = []
     all_loss = [[], [], 0]
@@ -33,17 +33,17 @@ def compute_actor_gradients(actor_agent, exp, batch_adv, entropy_weight):
         batch_size = node_act_vec.shape[0]
 
         # expand sparse adj_mats
-        extended_gcn_mats = expand_sp_mat(gcn_mats, batch_size)
+        extended_gcn_mats = sparse_op.expand_sp_mat(gcn_mats, batch_size)
 
         # extended masks
         # (on the dimension according to extended adj_mat)
         extended_gcn_masks = [np.tile(m, (batch_size, 1)) for m in gcn_masks]
 
         # expand sparse summ_mats
-        extended_summ_mats = merge_and_extend_sp_mat(summ_mats)
+        extended_summ_mats = sparse_op.merge_and_extend_sp_mat(summ_mats)
 
         # expand sparse running_dag_mats
-        extended_running_dag_mats = merge_and_extend_sp_mat(running_dag_mats)
+        extended_running_dag_mats = sparse_op.merge_and_extend_sp_mat(running_dag_mats)
 
         # compute gradient
         act_gradients, loss = actor_agent.get_gradients(
@@ -63,6 +63,6 @@ def compute_actor_gradients(actor_agent, exp, batch_adv, entropy_weight):
     all_loss[2] = np.sum(batch_adv ** 2) # time based baseline loss
 
     # aggregate all gradients from the batches
-    gradients = aggregate_gradients(all_gradients)
+    gradients = utils.aggregate_gradients(all_gradients)
 
     return gradients, all_loss

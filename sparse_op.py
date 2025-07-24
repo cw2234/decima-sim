@@ -24,9 +24,9 @@ class SparseMat(object):
     def get_data(self):
         return np.array(self.data)
 
-    def to_tfsp_matrix(self):
-        indices = np.mat([row, col]).transpose()
-        return tf.SparseTensorValue(indices, data, self.shape)
+    # def to_tfsp_matrix(self):
+    #     indices = np.mat([row, col]).transpose()
+    #     return tf.SparseTensorValue(indices, data, self.shape)
 
 
 def absorb_sp_mats(in_mats, depth):

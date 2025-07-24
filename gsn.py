@@ -5,8 +5,6 @@ Summarize node features globally
 via parameterized aggregation scheme
 """
 
-import copy
-import numpy as np
 import tensorflow as tf
 from tf_op import glorot, ones, zeros
 

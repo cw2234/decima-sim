@@ -1,5 +1,4 @@
-import numpy as np
-from param import *
+from param import args
 
 
 class RewardCalculator(object):

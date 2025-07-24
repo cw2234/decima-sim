@@ -5,8 +5,6 @@ Propergate node features among neighbors
 via parameterized message passing scheme
 """
 
-import copy
-import numpy as np
 import tensorflow as tf
 from tf_op import glorot, ones, zeros
 

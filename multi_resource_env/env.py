@@ -1,24 +1,23 @@
 import numpy as np
-import copy
-from param import *
-from utils import *
-from multi_resource_env.free_executors import FreeExecutors
+
+import utils
 from multi_resource_env.action_map import compute_act_map
-from multi_resource_env.job_dag import JobDAG
-from multi_resource_env.node import MultiResNode as Node
-from multi_resource_env.task import MultiResTask as Task
 from multi_resource_env.executor import MultiResExecutor as Executor
 from multi_resource_env.executor_commit import MultiResExecutorCommit as ExecutorCommit
-from multi_resource_env.job_generator import generate_jobs
+from multi_resource_env.free_executors import FreeExecutors
 from multi_resource_env.group_executors import group_executors
-from multi_resource_env.node_selected import NodeSelected
-from multi_resource_env.wall_time import WallTime
-from multi_resource_env.timeline import Timeline
+from multi_resource_env.job_dag import JobDAG
+from multi_resource_env.job_generator import generate_jobs
 from multi_resource_env.moving_executors import MovingExecutors
+from multi_resource_env.node_selected import NodeSelected
 from multi_resource_env.reward_calculator import RewardCalculator
+from multi_resource_env.task import MultiResTask as Task
+from multi_resource_env.timeline import Timeline
+from multi_resource_env.wall_time import WallTime
+from param import args
 
 
-class MultiResEnvironment():
+class MultiResEnvironment(object):
     def __init__(self):
         # SparkEnvironment.__init__(self)
         # isolated random number generator
@@ -53,7 +52,7 @@ class MultiResEnvironment():
         # overwrite executors
         assert len(args.exec_group_num) == len(args.exec_cpus)
         assert len(args.exec_group_num) == len(args.exec_mems)
-        self.executors = OrderedSet()
+        self.executors = utils.OrderedSet()
         exec_id = 0
         for i in range(len(args.exec_group_num)):
             exec_num = args.exec_group_num[i]
@@ -68,7 +67,7 @@ class MultiResEnvironment():
 
         # overwrite executor commit
         self.exec_commit = ExecutorCommit()
-        
+
         # overwrite node selected
         self.node_selected = NodeSelected(len(args.exec_group_num))
 
@@ -90,7 +89,7 @@ class MultiResEnvironment():
                 # note: executor.job_dag might change after self.schedule()
                 source_job = executor.job_dag
                 if self.exec_commit.get_len(
-                   executor.type, executor.node) > 0:
+                        executor.type, executor.node) > 0:
                     # directly fulfill the commitment
                     self.exec_to_schedule = {executor}
                     self.schedule()
@@ -98,7 +97,7 @@ class MultiResEnvironment():
                     # free up the executor
                     self.free_executors.add(source_job, executor)
                 # then consult all free executors
-                self.exec_to_schedule = OrderedSet(
+                self.exec_to_schedule = utils.OrderedSet(
                     self.free_executors[source_job])
                 self.source_job = source_job
                 self.num_source_exec = group_executors(
@@ -109,7 +108,7 @@ class MultiResEnvironment():
                 self.exec_to_schedule = {executor}
                 # only care about executors on the node
                 if self.exec_commit.get_len(
-                   executor.type, executor.node) > 0:
+                        executor.type, executor.node) > 0:
                     # directly fulfill the commitment
                     self.schedule()
                 else:
@@ -129,8 +128,8 @@ class MultiResEnvironment():
             # first try to schedule on current job
             for node in executor.job_dag.frontier_nodes:
                 if not self.saturated(node) and \
-                   executor.cpu >= node.cpu and \
-                   executor.mem >= node.mem:
+                        executor.cpu >= node.cpu and \
+                        executor.mem >= node.mem:
                     # greedily schedule a frontier node
                     task = node.schedule(executor)
                     self.timeline.push(task.finish_time, task)
@@ -160,15 +159,15 @@ class MultiResEnvironment():
         # Note: the frontier node is with respect to 
         # different kinds of executors
         assert len(num_source_execs) == len(args.exec_group_num)
-        frontier_nodes = {i: OrderedSet() \
-            for i in range(len(num_source_execs))}
+        frontier_nodes = {i: utils.OrderedSet() \
+                          for i in range(len(num_source_execs))}
 
         for job_dag in self.job_dags:
             for node in job_dag.nodes:
                 # check different executor types
                 for i in range(len(num_source_execs)):
                     if not node in self.node_selected[i] \
-                       and not self.saturated(node):
+                            and not self.saturated(node):
                         parents_saturated = True
                         for parent_node in node.parent_nodes:
                             if not self.saturated(parent_node):
@@ -177,22 +176,22 @@ class MultiResEnvironment():
                         if parents_saturated:
                             # check if node fits this executors type
                             if num_source_execs[i] > 0 and \
-                               node.cpu <= args.exec_cpus[i] and \
-                               node.mem <= args.exec_mems[i]:
+                                    node.cpu <= args.exec_cpus[i] and \
+                                    node.mem <= args.exec_mems[i]:
                                 frontier_nodes[i].add(node)
 
         return frontier_nodes
 
     def observe(self):
         return self.job_dags, self.source_job, self.num_source_exec, \
-               self.get_frontier_nodes(self.num_source_exec), \
-               self.exec_commit, self.moving_executors, self.action_map
+            self.get_frontier_nodes(self.num_source_exec), \
+            self.exec_commit, self.moving_executors, self.action_map
 
     def saturated(self, node):
         # frontier nodes := unsaturated nodes with all parent nodes saturated
         anticipated_task_idx = node.next_task_idx + \
-           self.exec_commit.node_commit[node] + \
-           self.moving_executors.count(node)
+                               self.exec_commit.node_commit[node] + \
+                               self.moving_executors.count(node)
         # note: anticipated_task_idx can be larger than node.num_tasks
         # when the tasks finish very fast before commitments are fulfilled
         return anticipated_task_idx >= node.num_tasks
@@ -215,8 +214,8 @@ class MultiResEnvironment():
             if node is None:
                 # the next node is explicitly silent, make executor ilde
                 if executor.job_dag is not None and \
-                   any([not n.no_more_tasks for n in \
-                        executor.job_dag.nodes]):
+                        any([not n.no_more_tasks for n in \
+                             executor.job_dag.nodes]):
                     # mark executor as idle in its original job
                     self.free_executors.add(executor.job_dag, executor)
                 else:
@@ -324,7 +323,7 @@ class MultiResEnvironment():
                 # assign free executors (if any) to the new job
                 if len(self.free_executors[None]) > 0:
                     self.exec_to_schedule = \
-                        OrderedSet(self.free_executors[None])
+                        utils.OrderedSet(self.free_executors[None])
                     self.source_job = None
                     self.num_source_exec = \
                         group_executors(
@@ -366,8 +365,8 @@ class MultiResEnvironment():
 
         # no more decision to make, jobs all done or time is up
         done = (sum(self.num_source_exec) == 0) and \
-               ((len(self.timeline) == 0) or \
-               (self.wall_time.curr_time >= self.max_time))
+               ((len(self.timeline) == 0) or
+                (self.wall_time.curr_time >= self.max_time))
 
         if done:
             assert self.wall_time.curr_time >= self.max_time or \
@@ -392,7 +391,7 @@ class MultiResEnvironment():
         self.exec_commit.reset()
         self.moving_executors.reset()
         self.reward_calculator.reset()
-        self.finished_job_dags = OrderedSet()
+        self.finished_job_dags = utils.OrderedSet()
         self.node_selected.clear()
         for executor in self.executors:
             executor.reset()
@@ -409,7 +408,7 @@ class MultiResEnvironment():
         self.source_job = None
         self.num_source_exec = group_executors(
             self.executors, len(args.exec_group_num))
-        self.exec_to_schedule = OrderedSet(self.executors)
+        self.exec_to_schedule = utils.OrderedSet(self.executors)
 
     def seed(self, seed):
         self.np_random.seed(seed)
