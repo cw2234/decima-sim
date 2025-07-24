@@ -190,7 +190,8 @@ def train_agent(agent_id, param_queue, reward_queue, adv_queue, gradient_queue):
                 env.wall_time.curr_time >= env.max_time])
 
         # environment interaction catch
-        except:
+        except AssertionError as e:
+            # print(f"exception: {e}")
             reward_queue.put(None)
 
 
