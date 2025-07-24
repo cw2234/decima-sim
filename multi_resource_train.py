@@ -157,7 +157,7 @@ def train_agent(agent_id, param_queue, reward_queue, adv_queue, gradient_queue):
             done = False
 
             # initial time
-            exp['wall_time'].append(env.wall_time.curr_time)
+            exp['wall_time'].append(env._wall_time.curr_time)
 
             while not done:
 
@@ -170,7 +170,7 @@ def train_agent(agent_id, param_queue, reward_queue, adv_queue, gradient_queue):
                 if node is not None:
                     # valid action, store reward and time
                     exp['reward'].append(reward)
-                    exp['wall_time'].append(env.wall_time.curr_time)
+                    exp['wall_time'].append(env._wall_time.curr_time)
                 elif len(exp['reward']) > 0:
                     # Note: if we skip the reward when node is None
                     # (i.e., no available actions), the sneaky
@@ -178,16 +178,16 @@ def train_agent(agent_id, param_queue, reward_queue, adv_queue, gradient_queue):
                     # nodes in one scheduling round, in order to
                     # avoid the negative reward
                     exp['reward'][-1] += reward
-                    exp['wall_time'][-1] = env.wall_time.curr_time
+                    exp['wall_time'][-1] = env._wall_time.curr_time
 
             # report reward signals to master
             assert len(exp['node_inputs']) == len(exp['reward'])
             reward_queue.put(
                 [exp['reward'], exp['wall_time'],
-                len(env.finished_job_dags),
-                np.mean([j.completion_time - j.start_time \
+                 len(env.finished_job_dags),
+                 np.mean([j.completion_time - j.start_time \
                          for j in env.finished_job_dags]),
-                env.wall_time.curr_time >= env.max_time])
+                 env._wall_time.curr_time >= env._max_time])
 
         # environment interaction catch
         except AssertionError as e:

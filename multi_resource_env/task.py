@@ -7,6 +7,9 @@ class MultiResTask(object):
 
         self.duration = rough_duration
 
+        self.cpu = cpu
+        self.mem = mem
+
         # uninitialized
         self.start_time = np.nan
         self.finish_time = np.nan

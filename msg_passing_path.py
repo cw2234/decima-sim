@@ -18,6 +18,11 @@ class Postman(object):
     message passing path, to save computation
     """
     def __init__(self):
+        self.job_dags = None
+        self.msg_mats = None
+        self.msg_masks = None
+        self.dag_summ_backward_map = None
+        self.running_dag_mat = None
         self.reset()
 
     def get_msg_path(self, job_dags):
