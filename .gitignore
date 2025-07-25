@@ -2,3 +2,5 @@
 models
 results
 __pycache__
+*.xlsx
+task_durations

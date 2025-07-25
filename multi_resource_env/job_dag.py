@@ -8,13 +8,13 @@ class JobDAG(object):
     def __init__(self, nodes, adj_mat, name):
         # nodes: list of N nodes
         # adj_mat: N by N 0-1 adjacency matrix, e_ij = 1 -> edge from i to j
-        assert len(nodes) == adj_mat.shape[0]
-        assert adj_mat.shape[0] == adj_mat.shape[1]
+        # assert len(nodes) == adj_mat.shape[0]
+        # assert adj_mat.shape[0] == adj_mat.shape[1]
 
         self.name = name
 
         self.nodes = nodes
-        self.adj_mat = adj_mat
+        # self.adj_mat = adj_mat
 
         self.num_nodes = len(self.nodes)
         self.num_nodes_done = 0
@@ -23,7 +23,7 @@ class JobDAG(object):
         self.executors = OrderedSet()
 
         # the computation graph needs to be a DAG
-        assert is_dag(self.num_nodes, self.adj_mat)
+        assert is_dag(self.nodes)
 
         # get the set of schedule nodes
         self.frontier_nodes = OrderedSet()
@@ -215,11 +215,10 @@ class JobDAGDuration(object):
         self.job_dag_duration -= work_done
 
 
-def is_dag(num_nodes, adj_mat):
+def is_dag(nodes):
     G = nx.DiGraph()
-    G.add_nodes_from(range(num_nodes))
-    for i in range(num_nodes):
-        for j in range(num_nodes):
-            if adj_mat[i, j] == 1:
-                G.add_edge(i, j)
+    G.add_nodes_from(range(len(nodes)))
+    for node in nodes:
+        for child in node.child_nodes:
+            G.add_edge(node.idx, child.idx)
     return nx.is_directed_acyclic_graph(G)
